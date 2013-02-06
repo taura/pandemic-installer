@@ -1,0 +1,273 @@
+#!/bin/bash -x
+
+# ---------------------------------
+# become_pandemic_master
+#  makes the machine a pandemic master
+#
+# Usage:
+#  1. boot pandemic master with Ubuntu Live CD 
+#     (or a customized Live CD, made by 
+#      make_customize_live.mk)
+#  2. open shell and run this script by:
+#
+#     ./become_pandemic_master
+#
+# What happens?
+#  the above command turns this machine into 
+#  a pandemic master.  see README for the basics,
+#  but here is what basically happens.  it is based on
+#  the approach described in 
+#   http://d.hatena.ne.jp/adsaria/20090206/1233905956
+#  the above page describes how to pxe-boot 
+#  clients, as if the they booted from Live CD.
+# 
+#  1. assign a static IP address to the network 
+#   interface through which talk to its clients. 
+#   the interface and static IP address can be 
+#   specified below by setting 'pandemic_netif'
+#
+#  2. install DHCP server (isc-dhcp-server) and
+#    generate its config file /etc/dhcp/dhcpd.conf
+#   so that it serves any client connected to 
+#   the same network. it specifies next-server to
+#   this machine, so that PXE-booted clients first
+#   obtains IP address from this machine and then
+#   try to get kernel from the TFTP server running
+#   on this machine.
+#
+#  3. install TFTP server (tftpd-hpa) and syslinux,
+#    and generate TFTP server's config file
+#  - generate 
+#
+#   /var/lib/tftpboot/pxelinux.cfg/default
+#
+#   so that the tftp server sends a kernel and 
+#   initrd image to any client that successfully 
+#   contacted to the DHCP server.
+#
+#  4. install NFS server (nfs-kernel-server) and
+#    export an nfsroot, which is used as the root
+#    file system of any client who contacted to 
+#    the TFTP server
+#
+
+# ---------------------------------
+# variables you may want to customize
+# ---------------------------------
+# (0) media directory. the directory on which the Live CD
+# is mounted. it is /cdrom when we boot up from CD.
+# it should be something else I have not yet tested.
+# you should set it so that you can find ${media}/casper 
+# directory
+media=/cdrom
+
+# (1) network interface through which this machine (master) 
+# is connected to clients. this script OVERWRITES its
+# address and subnet.
+pandemic_netif=eth0
+
+# (2) the first three octets of the subnet in which master
+# and clients speak; 
+# TODO: currently, we assume the network is a /24 network
+pandemic_subnet=10.0.3
+
+# (3) the master's IP address
+# if you ever want to customize this, make sure this does not
+# overlap with the pandemic_client_range
+pandemic_net_ipaddr=${pandemic_subnet}.15
+
+# (4) IP address range for the clients
+# this string is written into dhcpd.conf
+pandemic_client_range="${pandemic_subnet}.100 ${pandemic_subnet}.199"
+
+# (5) distribution name; it just names the nfsroot directory.
+# otherwise it does not matter
+distro=ubuntu-12.10-amd64
+
+# (6) name of the nfsroot directory. 
+# in my experience, it cannot not /var directory. NFS
+# server complains saying it cannot be exported.
+# stick with a directory under /tmp
+#nfsroot=/tmp/`whoami`/${distro}
+nfsroot=/patient_root
+
+# ---------------------------------
+# install and configure DHCP server
+# ---------------------------------
+conf_dhcp() {
+    # apt-get
+    apt-get -y install isc-dhcp-server 
+    conf=/etc/dhcp/dhcpd.conf
+    bak=/tmp/dhcpd.bak
+    diff=/tmp/dhcpd.diff
+    # generate config file
+    # only importants are
+    # next-server, which says clients should contact
+    # tftp server.  
+    # - filename, which says a bootloader the tftp server
+    # uses. it is relative to tftp server's root: /var/lib/tftpboot,
+    # so it means /var/lib/tftpboot/pxelinux.0
+    cat > ${diff} <<EOF
+authoritative;
+allow unknown-clients;
+
+subnet ${pandemic_subnet}.0 netmask 255.255.255.0 {
+	range ${pandemic_client_range};
+	option broadcast-address ${pandemic_subnet}.255;
+	option domain-name-servers ${pandemic_net_ipaddr};
+	option domain-name "localnet";		# Domain name
+	option routers ${pandemic_net_ipaddr};
+	next-server	${pandemic_net_ipaddr};		# should be IP address
+	filename	"pxelinux.0";
+}
+EOF
+    # copy the original, if it is the first time
+    if ! test -e ${bak} ; then
+	cp ${conf} ${bak}
+    fi
+    # append it to the end of the original file
+    cat ${bak} ${diff} > ${conf}
+    # configure network for DHCP
+    ifconfig ${pandemic_netif} ${pandemic_net_ipaddr} netmask 255.255.255.0 up
+    # (re)start the server
+    initctl reload-configuration
+    service isc-dhcp-server restart
+}
+
+# ---------------------------------
+# install tftp server
+# ---------------------------------
+conf_tftp() {
+    apt-get -y install tftpd-hpa
+    tftpboot=/var/lib/tftpboot
+    mkdir -p ${tftpboot}/pxelinux.cfg
+    # generate /var/lib/tftpboot/pxelinux.cfg/default;
+    # it uses a kernel (vmlinz) and initrd image found in Live CD media.
+    cat > ${tftpboot}/pxelinux.cfg/default <<EOF
+default live
+label live
+    kernel /${distro}/casper/vmlinuz
+    append initrd=/${distro}/casper/initrd.lz boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:${nfsroot} quiet splash --
+EOF
+
+#    append initrd=/${distro}/casper/initrd.lz file=/${distro}/preseed/ubuntu.seed boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:/rofs/${nfsroot} quiet splash --
+    # copy kernel and initrd image to tftp's directory
+    # (note: tftp server cannot see anywhere above /var/lib/tftpboot)
+    mkdir -p ${tftpboot}/${distro}/casper
+#    cp -r ${media}/preseed ${tftpboot}/${distro}/
+    cp -r ${media}/casper/vmlinuz ${media}/casper/initrd.lz ${tftpboot}/${distro}/casper/
+
+    initctl reload-configuration
+    service tftpd-hpa restart
+}
+
+# ---------------------------------
+# customize nfsroot
+# this is not used.
+# this will not work on diskless machine because
+# it would expand file system into /tmp (tmpfs) memory
+# ---------------------------------
+customize_nfsroot() {
+    edit=/tmp/squash
+#    rsync -a ${media}/preseed/ ${nfsroot}/
+    rsync --exclude /filesystem.squashfs -a ${media}/casper/ ${nfsroot}/
+    unsquashfs -d ${edit} ${media}/casper/filesystem.squashfs
+    # mount important file systems
+    umount -lf ${edit}/dev             || :
+    mount --bind /dev/ ${edit}/dev
+    chroot ${edit} umount -lf /proc    || :
+    chroot ${edit} mount -t proc none /proc
+    chroot ${edit} umount -lf /sys     || :
+    chroot ${edit} mount -t sysfs none /sys
+    chroot ${edit} umount -lf /dev/pts || :
+    chroot ${edit} mount -t devpts none /dev/pts
+    # now real work; we may wan to extend this part in future
+    chroot ${edit} apt-get -y --force-yes install openssh-server
+    chroot ${edit} ssh-keygen -N "" -f /root/.ssh/id_rsa
+    cp ${edit}/root/.ssh/id_rsa.pub ${edit}/root/.ssh/authorized_keys
+    # clean up 
+    umount -lf ${edit}/dev             || :
+    chroot ${edit} umount -lf /proc    || : 
+    chroot ${edit} umount -lf /sys     || :
+    chroot ${edit} umount -lf /dev/pts || : 
+    # write manifest, size, and md5sum
+    chroot ${edit} dpkg-query -W --showformat='${Package} ${Version}\n' > ${nfsroot}/casper/filesystem.manifest
+    printf `du -sx --block-size=1 ${edit} | cut -f1` > ${nfsroot}/casper/filesystem.size
+    mksquashfs ${edit} ${nfsroot}/casper/filesystem.squashfs
+    cd ${nfsroot} && find -type f -print0 | xargs -0 md5sum | grep -v isolinux/boot.cat | tee md5sum.txt
+}
+
+# ---------------------------------
+# make nfsroot
+# we use directory in Live CD
+# ---------------------------------
+conf_nfsroot() {
+    # create nfsroot; we use casper/preseed subdirectories
+    # found in the installation (Live CD) media.
+    # alternatively we could debootstrap and apply whatever
+    # customization we like to do (Lucie approach)
+    apt-get -y --force-yes install squashfs-tools
+    if ! test -e ${nfsroot}/ok; then
+	mkdir -p ${nfsroot}
+	# here we assume this directory contains ssh server
+#	cp -r ${media}/casper ${media}/preseed ${nfsroot}/
+	# we wish this
+	# customize_nfsroot
+	touch ${nfsroot}/ok
+    fi
+    # install NFS server
+    apt-get -y install nfs-kernel-server
+    # export the nfsroot
+    cat > /etc/exports <<EOF
+/rofs/${nfsroot} *(fsid=0,ro,all_squash,no_subtree_check,crossmnt)
+EOF
+    # (re)start servers (NFS complains if portmap is not running)
+    initctl reload-configuration
+    service portmap restart
+    service nfs-kernel-server restart
+}
+
+# ---------------------------------
+# syslinux and tftp configuration
+# ---------------------------------
+conf_syslinux() {
+    # install syslinux
+    apt-get -y install syslinux
+    # install bootloader
+    cp /usr/lib/syslinux/pxelinux.0 ${tftpboot}/
+}
+
+# ---------------------------------
+# run additional customization
+# ---------------------------------
+conf_user() {
+    for d in `ls -1d master_scripts/S*/` ; do
+	make -C $d -f `basename $d`.mk
+    done
+}
+
+# ---------------------------------
+# restart all services again
+# I don't know exactly why we need this.
+# but unless we restart them again, pxeboot fails
+# after DHCP (clients fail to contact tftp server)
+# ---------------------------------
+restart_services_again() {
+	service isc-dhcp-server restart
+	service tftpd-hpa restart
+	service portmap restart
+	service nfs-kernel-server restart
+}
+
+main() {
+	set -e
+	export LANG=C
+	conf_dhcp
+	conf_tftp
+	conf_nfsroot
+	conf_syslinux
+	conf_user
+	restart_services_again
+}
+
+main
