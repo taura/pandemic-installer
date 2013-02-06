@@ -89,7 +89,7 @@ distro=ubuntu-12.10-amd64
 # server complains saying it cannot be exported.
 # stick with a directory under /tmp
 #nfsroot=/tmp/`whoami`/${distro}
-nfsroot=/patient_root
+nfsroot=/rofs/patient_root
 
 # ---------------------------------
 # install and configure DHCP server
@@ -147,7 +147,7 @@ conf_tftp() {
 default live
 label live
     kernel /${distro}/casper/vmlinuz
-    append initrd=/${distro}/casper/initrd.lz boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:/rofs/${nfsroot} quiet splash --
+    append initrd=/${distro}/casper/initrd.lz boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:${nfsroot} quiet splash --
 EOF
 
 #    append initrd=/${distro}/casper/initrd.lz file=/${distro}/preseed/ubuntu.seed boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:/rofs/${nfsroot} quiet splash --
@@ -170,7 +170,7 @@ conf_nfsroot() {
     apt-get -y install nfs-kernel-server
     # export the nfsroot
     cat > /etc/exports <<EOF
-/rofs/${nfsroot} *(fsid=0,ro,all_squash,no_subtree_check,crossmnt)
+${nfsroot} *(fsid=0,ro,all_squash,no_subtree_check,crossmnt)
 EOF
     # (re)start servers (NFS complains if portmap is not running)
     initctl reload-configuration
