@@ -127,8 +127,6 @@ EOF
     fi
     # append it to the end of the original file
     cat ${bak} ${diff} > ${conf}
-    # configure network for DHCP
-    ifconfig ${pandemic_netif} ${pandemic_net_ipaddr} netmask 255.255.255.0 up
     # (re)start the server
     initctl reload-configuration
     service isc-dhcp-server restart
@@ -208,6 +206,8 @@ restart_services_again() {
 	service tftpd-hpa restart
 	service portmap restart
 	service nfs-kernel-server restart
+        # configure network for DHCP
+	ifconfig ${pandemic_netif} ${pandemic_net_ipaddr} netmask 255.255.255.0 up
 }
 
 main() {
