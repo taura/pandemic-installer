@@ -75,6 +75,8 @@ pandemic_subnet=10.0.3
 # if you ever want to customize this, make sure this does not
 # overlap with the pandemic_client_range
 pandemic_net_ipaddr=${pandemic_subnet}.15
+pandemic_net_bcast=${pandemic_subnet}.255
+pandemic_net_mask=255.255.255.0
 
 # (4) IP address range for the clients
 # this string is written into dhcpd.conf
@@ -90,6 +92,34 @@ distro=ubuntu-12.10-amd64
 # stick with a directory under /tmp
 #nfsroot=/tmp/`whoami`/${distro}
 nfsroot=/rofs/patient_root
+
+# ---------------------------------
+# install and configure DHCP server
+# ---------------------------------
+conf_net() {
+    if false ; then
+	conf=/etc/network/interfaces
+	bak=/tmp/interfaces
+	diff=/tmp/interfaces.diff
+	cat > ${diff} <<EOF
+auto ${pandemic_netif}
+iface ${pandemic_netif} inet static
+        address ${pandemic_net_ipaddr}
+        netmask ${pandemic_net_mask}
+        broadcast ${pandemic_net_bcast}
+}
+EOF
+	if ! test -e ${bak} ; then
+	    cp ${conf} ${bak}
+	fi
+        # append it to the end of the original file
+	cat ${bak} ${diff} > ${conf}
+        # configure network
+    fi
+
+    ifconfig ${pandemic_netif} ${pandemic_net_ipaddr} netmask ${pandemic_net_mask}
+}
+
 
 # ---------------------------------
 # install and configure DHCP server
@@ -206,13 +236,12 @@ restart_services_again() {
 	service tftpd-hpa restart
 	service portmap restart
 	service nfs-kernel-server restart
-        # configure network for DHCP
-	ifconfig ${pandemic_netif} ${pandemic_net_ipaddr} netmask 255.255.255.0 up
 }
 
 main() {
 	set -e
 	export LANG=C
+	conf_net
 	conf_dhcp
 	conf_tftp
 	conf_nfsroot
