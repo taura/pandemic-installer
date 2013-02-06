@@ -147,7 +147,7 @@ conf_tftp() {
 default live
 label live
     kernel /${distro}/casper/vmlinuz
-    append initrd=/${distro}/casper/initrd.lz boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:/root/${nfsroot} quiet splash --
+    append initrd=/${distro}/casper/initrd.lz boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:/rofs/${nfsroot} quiet splash --
 EOF
 
 #    append initrd=/${distro}/casper/initrd.lz file=/${distro}/preseed/ubuntu.seed boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:/rofs/${nfsroot} quiet splash --
