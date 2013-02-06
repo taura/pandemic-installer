@@ -6,4 +6,4 @@
 #
 
 all :
-	chroot $(custom_live_squashfs_root) svn checkout http://pandemic-installer.googlecode.com/svn/ /root/pi
+	chroot $(custom_live_squashfs_root) svn checkout http://pandemic-installer.googlecode.com/svn/trunk /root/pi
