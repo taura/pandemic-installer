@@ -89,7 +89,8 @@ extract := $(work_dir)/ext
 # directory in which we edit the file system image in iso
 # (/casper/filesystem.squash)
 custom_live_squashfs_root := $(work_dir)/edit
-custom_live_squashfs_patient_root := $(custom_live_squashfs_root)/patient_root
+#custom_live_squashfs_patient_root := $(custom_live_squashfs_root)/patient_root
+custom_live_squashfs_patient_root := $(work_dir)/patient_edit
 
 export custom_live_squashfs_root
 export custom_live_squashfs_patient_root
@@ -154,10 +155,10 @@ $(custom_live_squashfs_root)/root_ok : $(mnt)/casper
 	unsquashfs -d $(custom_live_squashfs_root) $(mnt)/casper/filesystem.squashfs
 	touch $@
 
-$(custom_live_squashfs_root)/patient_root/patient_root_ok : $(custom_live_squashfs_root)/root_ok
+$(custom_live_squashfs_patient_root)/patient_root_ok : $(mnt)/casper
 	[ `whoami` = root ]
-	rm -rf $(custom_live_squashfs_root)/patient_root
-	unsquashfs -d $(custom_live_squashfs_root)/patient_root $(mnt)/casper/filesystem.squashfs
+	rm -rf $(custom_live_squashfs_patient_root)
+	unsquashfs -d $(custom_live_squashfs_patient_root) $(mnt)/casper/filesystem.squashfs
 	touch $@
 
 # STEP 4:
@@ -165,7 +166,7 @@ $(custom_live_squashfs_root)/patient_root/patient_root_ok : $(custom_live_squash
 #  - install OpenSSH server
 #  - install key pair so that the pandemic master which exports
 #    the same CD image to its clients can ssh to them
-$(custom_live_squashfs_root)/customize_ok : $(custom_live_squashfs_root)/patient_root/patient_root_ok
+$(custom_live_squashfs_root)/customize_ok : $(custom_live_squashfs_root)/root_ok $(custom_live_squashfs_patient_root)/patient_root_ok
 # you must sudo 
 	[ `whoami` = root ]
 # prepare: mount important file system
@@ -206,6 +207,10 @@ $(custom_live_squashfs_root)/customize_ok : $(custom_live_squashfs_root)/patient
 # also create its manifest, which must exist in live CD
 $(extract)/casper/filesystem.squashfs : $(custom_live_squashfs_root)/customize_ok  $(extract)/extract_ok
 	[ `whoami` = root ]
+# mksquash patient root into master root
+	rm -rf $(custom_live_squashfs_root)/patient_root
+	mkdir -p $(custom_live_squashfs_root)/patient_root/casper
+	mksquashfs $(custom_live_squashfs_patient_root) $(custom_live_squashfs_root)/patient_root/casper/filesystem.squashfs
 	chroot $(custom_live_squashfs_root) dpkg-query -W --showformat='$${Package} $${Version}\n' > $(extract)/casper/filesystem.manifest
 	printf `du -sx --block-size=1 $(custom_live_squashfs_root) | cut -f1` > $(extract)/casper/filesystem.size
 	rm -f $(extract)/casper/filesystem.squashfs
