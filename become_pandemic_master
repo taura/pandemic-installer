@@ -147,7 +147,7 @@ conf_tftp() {
 default live
 label live
     kernel /${distro}/casper/vmlinuz
-    append initrd=/${distro}/casper/initrd.lz boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:${nfsroot} quiet splash --
+    append initrd=/${distro}/casper/initrd.lz boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:/root/${nfsroot} quiet splash --
 EOF
 
 #    append initrd=/${distro}/casper/initrd.lz file=/${distro}/preseed/ubuntu.seed boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:/rofs/${nfsroot} quiet splash --
@@ -162,59 +162,10 @@ EOF
 }
 
 # ---------------------------------
-# customize nfsroot
-# this is not used.
-# this will not work on diskless machine because
-# it would expand file system into /tmp (tmpfs) memory
-# ---------------------------------
-customize_nfsroot() {
-    edit=/tmp/squash
-#    rsync -a ${media}/preseed/ ${nfsroot}/
-    rsync --exclude /filesystem.squashfs -a ${media}/casper/ ${nfsroot}/
-    unsquashfs -d ${edit} ${media}/casper/filesystem.squashfs
-    # mount important file systems
-    umount -lf ${edit}/dev             || :
-    mount --bind /dev/ ${edit}/dev
-    chroot ${edit} umount -lf /proc    || :
-    chroot ${edit} mount -t proc none /proc
-    chroot ${edit} umount -lf /sys     || :
-    chroot ${edit} mount -t sysfs none /sys
-    chroot ${edit} umount -lf /dev/pts || :
-    chroot ${edit} mount -t devpts none /dev/pts
-    # now real work; we may wan to extend this part in future
-    chroot ${edit} apt-get -y --force-yes install openssh-server
-    chroot ${edit} ssh-keygen -N "" -f /root/.ssh/id_rsa
-    cp ${edit}/root/.ssh/id_rsa.pub ${edit}/root/.ssh/authorized_keys
-    # clean up 
-    umount -lf ${edit}/dev             || :
-    chroot ${edit} umount -lf /proc    || : 
-    chroot ${edit} umount -lf /sys     || :
-    chroot ${edit} umount -lf /dev/pts || : 
-    # write manifest, size, and md5sum
-    chroot ${edit} dpkg-query -W --showformat='${Package} ${Version}\n' > ${nfsroot}/casper/filesystem.manifest
-    printf `du -sx --block-size=1 ${edit} | cut -f1` > ${nfsroot}/casper/filesystem.size
-    mksquashfs ${edit} ${nfsroot}/casper/filesystem.squashfs
-    cd ${nfsroot} && find -type f -print0 | xargs -0 md5sum | grep -v isolinux/boot.cat | tee md5sum.txt
-}
-
-# ---------------------------------
 # make nfsroot
 # we use directory in Live CD
 # ---------------------------------
 conf_nfsroot() {
-    # create nfsroot; we use casper/preseed subdirectories
-    # found in the installation (Live CD) media.
-    # alternatively we could debootstrap and apply whatever
-    # customization we like to do (Lucie approach)
-    apt-get -y --force-yes install squashfs-tools
-    if ! test -e ${nfsroot}/ok; then
-	mkdir -p ${nfsroot}
-	# here we assume this directory contains ssh server
-#	cp -r ${media}/casper ${media}/preseed ${nfsroot}/
-	# we wish this
-	# customize_nfsroot
-	touch ${nfsroot}/ok
-    fi
     # install NFS server
     apt-get -y install nfs-kernel-server
     # export the nfsroot
