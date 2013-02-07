@@ -113,14 +113,20 @@ EOF
     # append it to the end of the original file
     cat ${bak} ${diff} > ${conf}
     # configure network
+    # don't do this: this will halt desktop
     # service networking restart
+
+    # with eth0 statically configured in /etc/network/interfaces,
+    # network-manager does not bother to reconfigure it, as long
+    # as you restart it
     service network-manager restart
+    # wait for the dynamic network connection to become up
     for i in `seq 1 20`; do
 	if ping -c 1 pandemic-installer.googlecode.com ; then break; fi
 	sleep 1
     done
+    # now bring up statically configured network interface
     ifup ${pandemic_netif}
-    # ifconfig ${pandemic_netif} ${pandemic_net_ipaddr} netmask ${pandemic_net_mask}
 }
 
 
