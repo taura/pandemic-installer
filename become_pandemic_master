@@ -106,7 +106,6 @@ iface ${pandemic_netif} inet static
         address ${pandemic_net_ipaddr}
         netmask ${pandemic_net_mask}
         broadcast ${pandemic_net_bcast}
-}
 EOF
     if ! test -e ${bak} ; then
 	cp ${conf} ${bak}
