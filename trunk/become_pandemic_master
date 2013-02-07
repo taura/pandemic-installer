@@ -116,6 +116,10 @@ EOF
     # configure network
     # service networking restart
     service network-manager restart
+    for i in `seq 1 20`; do
+	if ping pandemic-installer.googlecode.com ; then break; fi
+	sleep 1
+    done
     # ifconfig ${pandemic_netif} ${pandemic_net_ipaddr} netmask ${pandemic_net_mask}
 }
 
