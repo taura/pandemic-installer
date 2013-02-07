@@ -80,6 +80,12 @@ syslinux_menu ?= /usr/lib/syslinux/menu.c32
 # usb stck to a vmdk file; name its file name (totally optional)
 usb_vmdk ?= usb.vmdk
 
+# 
+#export pandemic_master_if:=eth0
+#export pandemic_master_ipaddr:=10.0.3.15
+#export pandemic_master_netmask:=255.255.255.0
+#export pandemic_master_broadcast:=10.0.3.255
+
 # ---------- derived pathnames ----------
 
 # directory to which we mount iso
@@ -88,12 +94,8 @@ mnt := $(work_dir)/mnt
 extract := $(work_dir)/ext
 # directory in which we edit the file system image in iso
 # (/casper/filesystem.squash)
-custom_live_squashfs_root := $(work_dir)/edit
-#custom_live_squashfs_patient_root := $(custom_live_squashfs_root)/patient_root
-custom_live_squashfs_patient_root := $(work_dir)/patient_edit
-
-export custom_live_squashfs_root
-export custom_live_squashfs_patient_root
+export custom_live_squashfs_root := $(work_dir)/edit
+export custom_live_squashfs_patient_root := $(work_dir)/patient_edit
 
 $(info orig_iso=$(orig_iso))
 $(info cust_iso=$(cust_iso))
@@ -123,7 +125,7 @@ help :
 
 make_pandemic_usb : $(extract)/casper/filesystem.squashfs
 burn_pandemic_usb : $(usb_mnt)/syslinux.cfg
-make_pandemic_cd_iso : $(cust_iso)
+make_pandemic_iso : $(cust_iso)
 
 # STEP 1:
 # mount ISO image file to a working directory $(mnt)
@@ -238,8 +240,8 @@ $(usb_mnt)/syslinux.cfg : $(extract)/casper/filesystem.squashfs
 	dd conv=notrunc bs=440 count=1 if=$(mbr_bin) of=$(usb_dev)
 	rm -rf $(usb_mnt)/casper/  && cp -r $(extract)/casper/ $(usb_mnt)/
 	rm -rf $(usb_mnt)/.disk    && cp -r $(extract)/.disk $(usb_mnt)/
-	rm -f $(usb_mnt)/menu.c32 && cp $(syslinux_menu) $(usb_mnt)/menu.c32
-	cp misc/syslinux.cfg $(usb_mnt)/
+	rm -f $(usb_mnt)/menu.c32  && cp $(syslinux_menu) $(usb_mnt)/menu.c32
+	cp misc/syslinux.cfg $(usb_mnt)/syslinux.cfg
 
 # clean up working directory.
 # we must make sure /proc, /sys, /dev/pts are unmounted

@@ -241,7 +241,7 @@ restart_services_again() {
 main() {
 	set -e
 	export LANG=C
-	conf_net
+	# conf_net
 	conf_dhcp
 	conf_tftp
 	conf_nfsroot
