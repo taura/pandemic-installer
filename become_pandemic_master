@@ -97,11 +97,10 @@ nfsroot=/rofs/patient_root
 # install and configure DHCP server
 # ---------------------------------
 conf_net() {
-    if false ; then
-	conf=/etc/network/interfaces
-	bak=/tmp/interfaces
-	diff=/tmp/interfaces.diff
-	cat > ${diff} <<EOF
+    conf=/etc/network/interfaces
+    bak=/tmp/interfaces
+    diff=/tmp/interfaces.diff
+    cat > ${diff} <<EOF
 auto ${pandemic_netif}
 iface ${pandemic_netif} inet static
         address ${pandemic_net_ipaddr}
@@ -109,15 +108,15 @@ iface ${pandemic_netif} inet static
         broadcast ${pandemic_net_bcast}
 }
 EOF
-	if ! test -e ${bak} ; then
-	    cp ${conf} ${bak}
-	fi
-        # append it to the end of the original file
-	cat ${bak} ${diff} > ${conf}
-        # configure network
+    if ! test -e ${bak} ; then
+	cp ${conf} ${bak}
     fi
-
-    ifconfig ${pandemic_netif} ${pandemic_net_ipaddr} netmask ${pandemic_net_mask}
+    # append it to the end of the original file
+    cat ${bak} ${diff} > ${conf}
+    # configure network
+    service networking restart
+    service network-manager restart
+    # ifconfig ${pandemic_netif} ${pandemic_net_ipaddr} netmask ${pandemic_net_mask}
 }
 
 
@@ -241,7 +240,7 @@ restart_services_again() {
 main() {
 	set -e
 	export LANG=C
-	# conf_net
+	conf_net
 	conf_dhcp
 	conf_tftp
 	conf_nfsroot
