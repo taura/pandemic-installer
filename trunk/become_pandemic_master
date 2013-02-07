@@ -119,6 +119,7 @@ EOF
 	if ping -c 1 pandemic-installer.googlecode.com ; then break; fi
 	sleep 1
     done
+    ifup ${pandemic_netif}
     # ifconfig ${pandemic_netif} ${pandemic_net_ipaddr} netmask ${pandemic_net_mask}
 }
 
