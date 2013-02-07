@@ -1,0 +1,43 @@
+#!/bin/bash
+
+PT=$(dirname $(realpath $0))
+BLKSZ=16k
+CHNKSZ=$((2**24))
+OUTFILE=/dev/sda
+MARIO=sonic
+
+gxpc quit
+gxpc use ssh $(hostname) .
+# TODO:change 
+gxpc explore --children_soft_limit 200 "10.0.3.[[100-199]]"
+
+gxpc mw bcp ${PT}/${MARIO} /root/
+gxpc e chmod 755 /root/${MARIO}
+# TODO: are there more elegant way?
+gxpc e 'gifconfig | grep 10.0.3.15' > /dev/null
+gxpc smask -
+gxpc e gifconfig | awk '{print $2;}' | sort > /tmp/ipaddrs
+
+for ip in $(cat /tmp/ipaddrs); do
+    fip=$(cat /tmp/ipaddrs | grep ${ip} -A 1 | tail -1)
+    if [ "${ip}" = "${fip}" ]; then
+	fip=
+    fi
+    verb=
+    if [ "${ip}" = "$(cat /tmp/ipaddrs|head -1)" ]; then
+	verb="-v -w"
+    fi
+    cat > /tmp/infect.sh <<EOF
+/root/${MARIO} \$@ ${verb} ${fip}
+EOF
+    scp /tmp/infect.sh ${ip}:/root/
+done
+
+gxpc e "bash /root/infect.sh -b ${BLKSZ} -c ${CHNKSZ} -o ${OUTFILE}" | tee /tmp/gxpc.log &
+
+while [ $(cat /tmp/gxpc.log | wc -l) != $(cat /tmp/ipaddrs | wc -l) ]; do
+    sleep 1
+done
+
+./${MARIO} -i /dev/sda -c ${CHNKSZ} -b ${BLKSZ} $(cat /tmp/ipaddrs|head -1)
+
