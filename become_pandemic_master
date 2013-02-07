@@ -114,7 +114,7 @@ EOF
     # append it to the end of the original file
     cat ${bak} ${diff} > ${conf}
     # configure network
-    service networking restart
+    # service networking restart
     service network-manager restart
     # ifconfig ${pandemic_netif} ${pandemic_net_ipaddr} netmask ${pandemic_net_mask}
 }
