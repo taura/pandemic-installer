@@ -82,7 +82,7 @@ typedef struct string_buf {
 string_buf_t * make_string_buf(size_t size){
     string_buf_t * ret;
     ret = malloc(sizeof(string_buf_t));
-    if (posix_memalign(&ret->buf, 512, sizeof(char) * size) != 0){
+    if (posix_memalign((void**)&ret->buf, 512, sizeof(char) * size) != 0){
         perror("posix_memalign error ");
         exit(1);
     }
@@ -105,11 +105,6 @@ void string_buf_refinc(string_buf_t * sbuf){
     sbuf->refcount++;
 }
 
-/* typedef struct queue_cell { */
-/*     string_buf_t * sbuf; */
-/*     size_t size; */
-/* } queue_cell_t; */
-
 typedef string_buf_t * queue_cell_t;
 
 typedef struct queue {
@@ -118,8 +113,6 @@ typedef struct queue {
     uint start_pos;
     uint end_pos;
     queue_cell_t * ringbuf;
-    pthread_mutex_t lk;
-    pthread_cond_t cond;
     pthread_spinlock_t slk;
     uint push_block_count;
     uint pop_block_count;
@@ -136,21 +129,25 @@ queue_t * make_queue(uint size){
     ret->push_block_count = 0;
     ret->pop_block_count = 0;
     pthread_spin_init(&ret->slk, PTHREAD_PROCESS_PRIVATE);
-    pthread_mutex_init(&ret->lk, NULL);
-    pthread_cond_init(&ret->cond, NULL);
 
     return ret;
 }
 
-void queue_push(queue_t * q, string_buf_t * elem){
-    // pthread_mutex_lock(&q->lk);
+int queue_push(queue_t * q, string_buf_t * elem, int timeout){
     pthread_spin_lock(&q->slk);
     while(q->size == q->num){
         q->push_block_count++;
-        // pthread_cond_wait(&q->cond, &q->lk);
-	pthread_spin_unlock(&q->slk);
-	while(q->size == q->num){}
-	pthread_spin_lock(&q->slk);
+        pthread_spin_unlock(&q->slk);
+        int start_time=time(NULL);
+        while(q->size == q->num){
+            int now_time=time(NULL);
+            if (timeout>0 && (start_time+timeout+1)<now_time)
+            {
+                //Give up if it took too much time
+                return 0;
+            }
+        }
+        pthread_spin_lock(&q->slk);
     }
     
     q->ringbuf[q->end_pos] = elem;
@@ -159,21 +156,18 @@ void queue_push(queue_t * q, string_buf_t * elem){
         q->end_pos = 0;
     }
     q->num++;
-    // pthread_cond_signal(&q->cond);
-    // pthread_mutex_unlock(&q->lk);
     pthread_spin_unlock(&q->slk);
+    return 1;
 }
 
 queue_cell_t queue_pop(queue_t * q){
     queue_cell_t ret;
-    // pthread_mutex_lock(&q->lk);
     pthread_spin_lock(&q->slk);
     while(q->num == 0){
         q->pop_block_count++;
-        // pthread_cond_wait(&q->cond, &q->lk);
-	pthread_spin_unlock(&q->slk);
-	while(q->num == 0){}
-	pthread_spin_lock(&q->slk);
+        pthread_spin_unlock(&q->slk);
+        while(q->num == 0){}
+        pthread_spin_lock(&q->slk);
     }
 
     ret = q->ringbuf[q->start_pos];
@@ -183,8 +177,6 @@ queue_cell_t queue_pop(queue_t * q){
     }
     q->num --;
     assert(q->end_pos == (q->start_pos + q->num) % q->size);
-    // pthread_cond_signal(&q->cond);
-    // pthread_mutex_unlock(&q->lk);
     pthread_spin_unlock(&q->slk);
     return ret;
 }
@@ -211,7 +203,7 @@ static char *dd_status_str[]=
 typedef struct thread_arg {
     queue_t * q;
     int fd;
-    dd_status_t status;
+    dd_status_t volatile *pstatus;
     uint64_t bytes_written;
 } thread_arg_t;
 
@@ -219,26 +211,26 @@ void * dd_writer(void * arg){
     thread_arg_t * targ = (thread_arg_t *) arg;
     queue_t * q = targ->q;
     int output_fd = targ->fd;
+    dd_status_t volatile *pstatus= targ->pstatus;
     string_buf_t * qcell;
     long len;
     uint64_t total_size=0;
-    dd_status_t status=SUCCESS;
     for(;;){
         qcell = queue_pop(q);
         if (qcell == NULL){ break; }
-        if (status==SUCCESS){
+        if ((*pstatus)==SUCCESS){
             size_t btr=sizeof(char) * qcell->len;
             len = write(output_fd, qcell->buf, btr);
             if (len < 0 ){
                 perror("write error");
                 fprintf(stderr,"Give up writing to disk\n");
-                status=FAILURE;
+                *pstatus=FAILURE;
             }
             else if (len!=btr){
                 fprintf(stderr,"write error: bytes to write/written mismatch (overrun?)\n");
                 fprintf(stderr,"Give up writing to disk\n");
                 total_size+=len;
-                status=OVERRUN;
+                *pstatus=OVERRUN;
             }
             else{
                 total_size+=len;
@@ -247,7 +239,6 @@ void * dd_writer(void * arg){
         free_string_buf(qcell);
     }
     close(output_fd);
-    targ->status=status;
     targ->bytes_written=total_size;
     return NULL;
 }
@@ -298,12 +289,13 @@ int main(int argc, char ** argv){
     bool opt_verbose = false;
     bool opt_extra_verbose = false;
     int opt_queuesize;
+	int opt_timeout = 10;
     role_t role = DRAIN;
     
     extern char * optarg;
     extern int optind, opterr;
     char ch;
-    while((ch = getopt(argc, argv, "i:o:b:c:d:l:vw")) != -1){
+    while((ch = getopt(argc, argv, "i:o:b:c:d:l:p:t:vw")) != -1){
         switch(ch){
         case 'i':
             opt_input = strdup(optarg);
@@ -326,6 +318,9 @@ int main(int argc, char ** argv){
         case 'p':
             opt_port = atoi(optarg);
             break;
+		case 't':
+			opt_timeout = atoi(optarg);
+			break;
         case 'l':
             opt_limitbandwidth = atoi(optarg);
             break;
@@ -468,7 +463,9 @@ int main(int argc, char ** argv){
         }
     }
     thread_arg_t dd_arg;
+    volatile dd_status_t dd_status=SUCCESS;
     memset(&dd_arg,0,sizeof(dd_arg));
+    dd_arg.pstatus=&dd_status;
     if (do_output == true){
         dd_arg.q = dd_queue;
         dd_arg.fd = output_fd;
@@ -514,7 +511,7 @@ int main(int argc, char ** argv){
             }
         }
 
-        printf("[SORUCE] total sent size: %lld bytes\n", total_size);
+        printf("[SORUCE] total sent size: %lld bytes\n", (long long)total_size);
         close(input_dd_fd);
     } else {
         assert(do_output == true);
@@ -537,7 +534,12 @@ int main(int argc, char ** argv){
             total_size += len;
             recv_size += len;
 
-            queue_push(dd_queue, recvbuf);
+            if (!queue_push(dd_queue, recvbuf, opt_timeout)){
+                //Give Up
+                fprintf(stderr,"Queue is blocked too long\n");
+                fprintf(stderr,"Give up writing to disk\n");
+                dd_status=FAILURE;
+            }
 
             gettimeofday(&t1, NULL);
             if (t1.tv_sec - t0.tv_sec > 2){
@@ -561,7 +563,7 @@ int main(int argc, char ** argv){
                 dd_queue->pop_block_count = 0;
             }
         }
-        queue_push(dd_queue, NULL);
+        queue_push(dd_queue, NULL, 0);
         //printf("[%s] total sent size: %lld bytes\n", (role == PIPER ? "PIPER" : "DRAIN") ,total_size);
         // queue_push(send_queue, NULL);
     }
@@ -574,12 +576,12 @@ int main(int argc, char ** argv){
     if (do_output == true){
         int retcode;
         pthread_join(dd_thread, NULL);
-        retcode=((dd_arg.status==SUCCESS) && (dd_arg.bytes_written==total_size)) ? 0 : 1;
+        retcode=((dd_status==SUCCESS) && (dd_arg.bytes_written==total_size)) ? 0 : 1;
         if (dd_arg.bytes_written==total_size){
-            printf("[%s][%s] total sent & written size: %lld bytes\n", (role == PIPER ? "PIPER" : "DRAIN") , dd_status_str[dd_arg.status], total_size);
+            printf("[%s][%s] total sent & written size: %lld bytes\n", (role == PIPER ? "PIPER" : "DRAIN") , dd_status_str[dd_status], (long long)total_size);
         }
         else{
-            printf("[%s][%s] total sent size: %lld bytes, written size: %lld bytes\n", (role == PIPER ? "PIPER" : "DRAIN") , dd_status_str[dd_arg.status], total_size, dd_arg.bytes_written);
+            printf("[%s][%s] total sent size: %lld bytes, written size: %lld bytes\n", (role == PIPER ? "PIPER" : "DRAIN") , dd_status_str[dd_status], (long long)total_size, (long long)dd_arg.bytes_written);
         }
         return retcode;
     }
