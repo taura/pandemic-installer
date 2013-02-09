@@ -8,3 +8,4 @@
 all :
 	chroot $(custom_live_squashfs_root) rm -rf /root/pi
 	chroot $(custom_live_squashfs_root) svn checkout http://pandemic-installer.googlecode.com/svn/trunk /root/pi
+	chroot $(custom_live_squashfs_root) apt-get --download-only --force-yes -y install isc-dhcp-server tftpd-hpa nfs-kernel-server syslinux
