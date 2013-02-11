@@ -1,0 +1,4 @@
+[org.gnome.settings-daemon.plugins.power]
+lid-close-battery-action='nothing'
+lid-close-ac-action='nothing'
+
