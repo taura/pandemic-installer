@@ -109,9 +109,9 @@ typedef string_buf_t * queue_cell_t;
 
 typedef struct queue {
     uint size;
-    uint num;
-    uint start_pos;
-    uint end_pos;
+    volatile uint num;
+    volatile uint start_pos;
+    volatile uint end_pos;
     queue_cell_t * ringbuf;
     pthread_spinlock_t slk;
     uint push_block_count;
@@ -138,9 +138,9 @@ int queue_push(queue_t * q, string_buf_t * elem, int timeout){
     while(q->size == q->num){
         q->push_block_count++;
         pthread_spin_unlock(&q->slk);
-        int start_time=time(NULL);
+        time_t start_time=time(NULL);
         while(q->size == q->num){
-            int now_time=time(NULL);
+            time_t now_time=time(NULL);
             if (timeout>0 && (start_time+timeout+1)<now_time)
             {
                 //Give up if it took too much time
@@ -223,8 +223,10 @@ void * dd_writer(void * arg){
             len = write(output_fd, qcell->buf, btr);
             if (len < 0 ){
                 perror("write error");
-                fprintf(stderr,"Give up writing to disk\n");
-                *pstatus=FAILURE;
+                if (*pstatus==SUCCESS){
+                    fprintf(stderr,"Give up writing to disk\n");
+                    *pstatus=FAILURE;
+                }
             }
             else if (len!=btr){
                 fprintf(stderr,"write error: bytes to write/written mismatch (overrun?)\n");
@@ -534,11 +536,17 @@ int main(int argc, char ** argv){
             total_size += len;
             recv_size += len;
 
-            if (!queue_push(dd_queue, recvbuf, opt_timeout)){
-                //Give Up
-                fprintf(stderr,"Queue is blocked too long\n");
-                fprintf(stderr,"Give up writing to disk\n");
-                dd_status=FAILURE;
+            if (dd_status==SUCCESS){
+                if (!queue_push(dd_queue, recvbuf, opt_timeout)){
+                    //Give Up
+                    fprintf(stderr,"Queue is blocked too long\n");
+                    fprintf(stderr,"Give up writing to disk\n");
+                    dd_status=FAILURE;
+                    free_string_buf(recvbuf);
+                }
+            }
+            else{
+                free_string_buf(recvbuf);
             }
 
             gettimeofday(&t1, NULL);
