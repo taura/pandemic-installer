@@ -1,0 +1,5 @@
+#!/bin/sh -e
+
+cd /root/pi/
+./become_pandemic_master
+
