@@ -1,12 +1,5 @@
 #!/bin/bash
 
-cd pi
-
-if [ ! -f prepared ];then
-	./become_pandemic_master 2>&1 | tee prepare.log
-	touch prepared
-fi
-
-cd master_scripts/S20outbreak
+cd pi/master_scripts/S20outbreak
 ./outbreak | tee /root/outbreak.log
 
