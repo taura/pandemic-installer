@@ -6,6 +6,9 @@ CHNKSZ=$((2**24))
 OUTFILE=/dev/sda
 MARIO=sonic
 
+CHANGE_WP=change_wallpaper
+FAIL_IMG=failure.png
+
 gxpc quit
 gxpc use ssh $(hostname) .
 # TODO:change 
@@ -13,6 +16,10 @@ gxpc explore --children_soft_limit 200 "10.0.3.[[100-199]]"
 
 gxpc mw bcp ${PT}/${MARIO} /root/
 gxpc e chmod 755 /root/${MARIO}
+
+gxpc mw bcp ${PT}/${CHANGE_WP} /root/
+gxpc mw bcp ${PT}/${FAIL_IMG} /root/
+
 # TODO: are there more elegant way?
 gxpc e 'gifconfig | grep 10.0.3.15' > /dev/null
 gxpc smask -
@@ -29,6 +36,11 @@ for ip in $(cat /tmp/ipaddrs); do
     fi
     cat > /tmp/infect.sh <<EOF
 /root/${MARIO} \$@ ${verb} ${fip}
+exitcode=\$?
+if [ "\${exitcode}" != "0" ]; then
+	/root/${CHANGE_WP} /root/${FAIL_IMG}
+fi
+exit \${exitcode}
 EOF
     scp /tmp/infect.sh ${ip}:/root/
 done
