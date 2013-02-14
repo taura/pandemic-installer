@@ -1,0 +1,17 @@
+#!/bin/bash
+
+if [ -z "$1" ]; then
+	exit 0
+fi
+
+cli_pid=$(pgrep -u $LOGNAME -n nautilus)
+env_line=$(tr '\0' '\n' < /proc/$cli_pid/environ | grep '^DBUS_SESSION_BUS_ADDRESS')
+if [ -z "$env_line" ]; then
+	exit 0
+fi
+
+eval ${env_line}
+export DBUS_SESSION_BUS_ADDRESS
+
+gsettings set org.gnome.desktop.background picture-uri \'file://$1\'
+
