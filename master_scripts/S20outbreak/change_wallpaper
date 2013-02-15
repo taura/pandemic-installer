@@ -1,17 +1,26 @@
 #!/bin/bash
 
 if [ -z "$1" ]; then
-	exit 0
+	exit 1
 fi
 
-cli_pid=$(pgrep -u $LOGNAME -n nautilus)
-env_line=$(tr '\0' '\n' < /proc/$cli_pid/environ | grep '^DBUS_SESSION_BUS_ADDRESS')
-if [ -z "$env_line" ]; then
-	exit 0
+sessionfile=`find "/home/ubuntu/.dbus/session-bus/" -maxdepth 1 -type f`
+if [ -f "$sessionfile" ] ; then
+    if grep -q "^DBUS_SESSION_BUS_ADDRESS=" "${sessionfile}" ; then
+        export `grep "^DBUS_SESSION_BUS_ADDRESS=" "${sessionfile}"`
+    else
+        echo "DBUS_SESSION_BUS_ADDRESS not found in ${sessionfile}"
+        exit 1
+    fi
+else
+    echo "no session address file found in /home/ubuntu/.dbus/session-bus"
+    exit 1
 fi
 
-eval ${env_line}
-export DBUS_SESSION_BUS_ADDRESS
+IMG_DEST=/home/ubuntu/$(basename $1)
 
-gsettings set org.gnome.desktop.background picture-uri \'file://$1\'
+cp $1 ${IMG_DEST}
+chmod 644 ${IMG_DEST}
+cd /home/ubuntu
+sudo -u ubuntu sh -c "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS} gsettings set org.gnome.desktop.background picture-uri \'file://${IMG_DEST}\'"
 
