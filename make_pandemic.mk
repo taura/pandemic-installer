@@ -117,6 +117,7 @@ $(info usb_mnt=$(usb_mnt))
 all : help
 
 help :
+	@echo "0. install squashfs-tools and syslinux (using apt-get)"
 	@echo "1. prepare the default Ubuntu Live CD"
 	@echo "  (by default, ubuntu-12.10-desktop-amd64.iso;"
 	@echo "   can be specified below)"
@@ -137,11 +138,20 @@ usb : $(extract)/casper/filesystem.squashfs
 burn_usb : $(usb_mnt)/syslinux.cfg
 iso : $(cust_iso)
 
+check_tools :
+	@echo "checking whether you have syslinux ..."
+	ls $(mbr_bin)
+	ls $(syslinux_menu)
+	@echo "OK, you have syslinux"
+	@echo "checking whether you have squashfs-tools ..."
+	@echo "OK, you have squashfs-tools"
+	which unsquashfs
+
 # STEP 1:
 # mount ISO image file to a working directory $(mnt)
 # in case it is already mounted, try umount first.
 # on success, we must have $(mnt)/casper, among others
-$(mnt)/casper : $(orig_iso)
+$(mnt)/casper : $(orig_iso) check_tools
 	[ `whoami` = root ]
 	mkdir -p $(mnt)
 	umount -lf $(mnt) 2> /dev/null; mount -o loop,ro $(orig_iso) $(mnt)
