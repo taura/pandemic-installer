@@ -16,10 +16,14 @@
 #     can be specified below)
 #  2. run this script on your laptop by:
 #
-#        sudo make -f make_custom_live.mk
+#        sudo make -f make_custom_live.mk make_pandemic_usb
 #
-#  3. with luck, you have a custom Ubuntu Live CD
-#  4. boot pandemic master with the custom Live CD
+#  with luck, you will have a file system image at /tmp/root/custom_live
+#  
+#  3. plug a FAT-formatted USB stick into the PC and burn the file 
+#  system image into it by:
+#
+#        sudo make -f make_custom_live.mk burn_pandemic_usb
 #
 # How it works:
 #  it basically follows information at
@@ -113,15 +117,21 @@ $(info usb_mnt=$(usb_mnt))
 all : help
 
 help :
-	@echo "usage:"
-	@echo "  (1) plug USB stick to which you want to install pandemic master"
-	@echo "  (2) "
+	@echo "1. prepare the default Ubuntu Live CD"
+	@echo "  (by default, ubuntu-12.10-desktop-amd64.iso;"
+	@echo "   can be specified below)"
+	@echo "2. run this script on your laptop by:"
 	@echo ""
-	@echo "      make -f make_custom_live.mk"
-	@echo "  and see if it recognizes USB stick (check usb_xxx= lines above)"
-	@echo "  (3) finally, take a deep breath and"
+	@echo "        sudo make -f make_custom_live.mk make_pandemic_usb"
 	@echo ""
-	@echo "      sudo make -f make_custom_live.mk burn_pandemic_usb"
+	@echo "  with luck, you will have a file system image at /tmp/root/custom_live"
+	@echo ""
+	@echo "3. plug a FAT-formatted USB stick into the PC and burn the file "
+	@echo "system image into it by:"
+	@echo ""
+	@echo "        sudo make -f make_custom_live.mk burn_pandemic_usb"
+	@echo ""
+	@echo "4. now you should be able to boot the master PC with the USB stick!"
 
 make_pandemic_usb : $(extract)/casper/filesystem.squashfs
 burn_pandemic_usb : $(usb_mnt)/syslinux.cfg
