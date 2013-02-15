@@ -16,14 +16,14 @@
 #     can be specified below)
 #  2. run this script on your laptop by:
 #
-#        sudo make -f make_custom_live.mk make_pandemic_usb
+#        sudo make -f make_pandemic.mk usb
 #
 #  with luck, you will have a file system image at /tmp/root/custom_live
 #  
 #  3. plug a FAT-formatted USB stick into the PC and burn the file 
 #  system image into it by:
 #
-#        sudo make -f make_custom_live.mk burn_pandemic_usb
+#        sudo make -f make_pandemic.mk burn_usb
 #
 # How it works:
 #  it basically follows information at
@@ -122,20 +122,20 @@ help :
 	@echo "   can be specified below)"
 	@echo "2. run this script on your laptop by:"
 	@echo ""
-	@echo "        sudo make -f make_custom_live.mk make_pandemic_usb"
+	@echo "        sudo make -f make_pandemic.mk usb"
 	@echo ""
 	@echo "  with luck, you will have a file system image at /tmp/root/custom_live"
 	@echo ""
 	@echo "3. plug a FAT-formatted USB stick into the PC and burn the file "
 	@echo "system image into it by:"
 	@echo ""
-	@echo "        sudo make -f make_custom_live.mk burn_pandemic_usb"
+	@echo "        sudo make -f make_pandemic.mk burn_usb"
 	@echo ""
 	@echo "4. now you should be able to boot the master PC with the USB stick!"
 
-make_pandemic_usb : $(extract)/casper/filesystem.squashfs
-burn_pandemic_usb : $(usb_mnt)/syslinux.cfg
-make_pandemic_iso : $(cust_iso)
+usb : $(extract)/casper/filesystem.squashfs
+burn_usb : $(usb_mnt)/syslinux.cfg
+iso : $(cust_iso)
 
 # STEP 1:
 # mount ISO image file to a working directory $(mnt)
