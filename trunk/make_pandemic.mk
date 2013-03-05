@@ -209,8 +209,8 @@ $(custom_live_squashfs_root)/customize_ok : $(custom_live_squashfs_root)/root_ok
 	chroot $(custom_live_squashfs_patient_root) mount -t sysfs none /sys
 	chroot $(custom_live_squashfs_patient_root) umount -lf /dev/pts 2> /dev/null || :
 	chroot $(custom_live_squashfs_patient_root) mount -t devpts none /dev/pts
-# now real work; we may wan to extend this part in future
-	for d in $(shell ls -1d scripts/S*/); do $(MAKE) -C $$d -f `basename $$d`.mk ; done
+# now real work; we may want to extend this part in future
+	for d in $(shell ls -1d scripts/S*/); do $(MAKE) -C $$d -f `basename $$d`.mk || exit 1 ; done
 # clean up 
 	umount -lf $(custom_live_squashfs_root)/dev             || :
 	chroot $(custom_live_squashfs_root) umount -lf /proc    || : 
