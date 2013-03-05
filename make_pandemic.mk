@@ -144,8 +144,8 @@ check_tools :
 	ls $(syslinux_menu)
 	@echo "OK, you have syslinux"
 	@echo "checking whether you have squashfs-tools ..."
-	@echo "OK, you have squashfs-tools"
 	which unsquashfs
+	@echo "OK, you have squashfs-tools"
 
 # STEP 1:
 # mount ISO image file to a working directory $(mnt)
