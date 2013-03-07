@@ -200,6 +200,7 @@ $(custom_live_squashfs_root)/customize_ok : $(custom_live_squashfs_root)/root_ok
 	chroot $(custom_live_squashfs_root) mount -t sysfs none /sys
 	chroot $(custom_live_squashfs_root) umount -lf /dev/pts 2> /dev/null || :
 	chroot $(custom_live_squashfs_root) mount -t devpts none /dev/pts
+	cp /etc/resolv.conf $(custom_live_squashfs_root)/etc/resolv.conf
 # ditto, but for patient
 	umount -lf $(custom_live_squashfs_patient_root)/dev             2> /dev/null || :
 	mount --bind /dev/ $(custom_live_squashfs_patient_root)/dev
@@ -209,6 +210,7 @@ $(custom_live_squashfs_root)/customize_ok : $(custom_live_squashfs_root)/root_ok
 	chroot $(custom_live_squashfs_patient_root) mount -t sysfs none /sys
 	chroot $(custom_live_squashfs_patient_root) umount -lf /dev/pts 2> /dev/null || :
 	chroot $(custom_live_squashfs_patient_root) mount -t devpts none /dev/pts
+	cp /etc/resolv.conf $(custom_live_squashfs_patient_root)/etc/resolv.conf
 # now real work; we may want to extend this part in future
 	for d in $(shell ls -1d scripts/S*/); do $(MAKE) -C $$d -f `basename $$d`.mk || exit 1 ; done
 # clean up 
