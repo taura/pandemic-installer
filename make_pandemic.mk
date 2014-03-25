@@ -68,9 +68,14 @@ work_dir ?= /tmp/$(shell whoami)/custom_live
 # (5) try to find usb stick's partition (e.g., /dev/sdb1), device (/dev/sdb),
 # and its mount point
 
-usb_part ?= $(shell mount | awk '/fat/ { print $$1 }')
-usb_dev  ?= $(shell mount | awk '/fat/ { print substr($$1, 1, length($$1)-1) }')
-usb_mnt  ?= $(shell mount | awk '/fat/ { print $$3 }')
+usb_part ?= $(shell mount | awk '/fat/ && !/boot/ { print $$1 }')
+usb_dev  ?= $(shell mount | awk '$$1 == usb_part { print substr($$1, 1, length($$1)-1) }' usb_part=$(usb_part))
+usb_mnt  ?= $(shell mount | awk '$$1 == usb_part { print $$3 }' usb_part=$(usb_part))
+
+#usb_part ?= $(shell mount | awk '/fat/ { print $$1 }')
+#usb_dev  ?= $(shell mount | awk '/fat/ { print substr($$1, 1, length($$1)-1) }')
+#usb_mnt  ?= $(shell mount | awk '/fat/ { print $$3 }')
+
 
 # (6) mbr record to dump into usb stick ; 
 # taken from syslinux package, but you may have your own tarball
@@ -107,9 +112,11 @@ $(info work_dir=$(work_dir))
 $(info mnt=$(mnt))
 $(info extract=$(extract))
 $(info custom_live_squashfs_root=$(custom_live_squashfs_root))
+$(info ******** check if the following seems correct ********)
 $(info usb_dev=$(usb_dev))
 $(info usb_part=$(usb_part))
 $(info usb_mnt=$(usb_mnt))
+$(info ******************************************************)
 
 # ---------- targets ----------
 
