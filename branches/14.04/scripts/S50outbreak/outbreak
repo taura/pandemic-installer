@@ -1,0 +1,5 @@
+#!/bin/bash
+
+cd pi/master_scripts/S20outbreak
+./outbreak | tee /root/outbreak.log
+

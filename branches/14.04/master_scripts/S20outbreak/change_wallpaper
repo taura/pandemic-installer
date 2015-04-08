@@ -1,0 +1,26 @@
+#!/bin/bash
+
+if [ -z "$1" ]; then
+	exit 1
+fi
+
+sessionfile=`find "/home/ubuntu/.dbus/session-bus/" -maxdepth 1 -type f`
+if [ -f "$sessionfile" ] ; then
+    if grep -q "^DBUS_SESSION_BUS_ADDRESS=" "${sessionfile}" ; then
+        export `grep "^DBUS_SESSION_BUS_ADDRESS=" "${sessionfile}"`
+    else
+        echo "DBUS_SESSION_BUS_ADDRESS not found in ${sessionfile}"
+        exit 1
+    fi
+else
+    echo "no session address file found in /home/ubuntu/.dbus/session-bus"
+    exit 1
+fi
+
+IMG_DEST=/home/ubuntu/$(basename $1)
+
+cp $1 ${IMG_DEST}
+chmod 644 ${IMG_DEST}
+cd /home/ubuntu
+sudo -u ubuntu sh -c "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS} gsettings set org.gnome.desktop.background picture-uri \'file://${IMG_DEST}\'"
+
