@@ -224,13 +224,15 @@ void * dd_writer(void * arg){
             if (len < 0 ){
                 perror("write error");
                 if (*pstatus==SUCCESS){
-                    fprintf(stderr,"Give up writing to disk\n");
+                    printf("Give up writing to disk\n");
+                    fflush(stdout);
                     *pstatus=FAILURE;
                 }
             }
             else if (len!=btr){
-                fprintf(stderr,"write error: bytes to write/written mismatch (overrun?)\n");
-                fprintf(stderr,"Give up writing to disk\n");
+                printf("write error: bytes to write/written mismatch (overrun?)\n");
+                printf("Give up writing to disk\n");
+                fflush(stdout);
                 total_size+=len;
                 *pstatus=OVERRUN;
             }
@@ -539,8 +541,9 @@ int main(int argc, char ** argv){
             if (dd_status==SUCCESS){
                 if (!queue_push(dd_queue, recvbuf, opt_timeout)){
                     //Give Up
-                    fprintf(stderr,"Queue is blocked too long\n");
-                    fprintf(stderr,"Give up writing to disk\n");
+                    printf("Queue is blocked too long\n");
+                    printf("Give up writing to disk\n");
+                    fflush(stdout);
                     dd_status=FAILURE;
                     free_string_buf(recvbuf);
                 }
