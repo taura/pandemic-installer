@@ -60,7 +60,7 @@ Step 1: make a customized USB stick
 This step should be done on your Linux, "Work PC"
 
   - download Ubuntu live installer DVD image 
-     (e.g., ubuntu-12.10-desktop-amd64.iso)
+     (e.g., ubuntu-14.04.2-desktop-amd64.iso)
 
   - put it in your current directory and run
 
