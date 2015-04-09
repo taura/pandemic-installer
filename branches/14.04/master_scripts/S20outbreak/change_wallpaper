@@ -21,7 +21,8 @@ fi
 #fi
 
 # On Ubuntu 14.XX, Dbus session file located in /home/ubuntu/.dbus/session-bus/ is not valid or no longer used.
-# So this script takes a different approach to acquire DBUS_SESSION_BUS_ADDRESS.
+# So this script takes another approach based on the idea described in the below URL (and many other similar pages):
+# dhttp://ubuntuforums.org/showthread.php?t=1674957
 # Specifically, it collects candidates of the correct DBUS_SESSION_BUS_ADDRESS from environment variables of running programs,
 # and then tries to change the wallpaper with each candidates.
 
