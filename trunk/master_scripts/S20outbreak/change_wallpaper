@@ -4,6 +4,8 @@ if [ -z "$1" ]; then
 	exit 1
 fi
 
+# DBUS_SESSION_BUS_ADDRESS acquisition is implemented based on the code introduced in 
+# http://askubuntu.com/questions/135573/gconf-error-no-d-bus-daemon-running-how-to-reinstall-or-fix
 sessionfile=`find "/home/ubuntu/.dbus/session-bus/" -maxdepth 1 -type f`
 if [ -f "$sessionfile" ] ; then
     if grep -q "^DBUS_SESSION_BUS_ADDRESS=" "${sessionfile}" ; then
@@ -22,5 +24,7 @@ IMG_DEST=/home/ubuntu/$(basename $1)
 cp $1 ${IMG_DEST}
 chmod 644 ${IMG_DEST}
 cd /home/ubuntu
+# How to change the wallpaper from the command-line is introduced in many websites like the URL below:
+# http://askubuntu.com/questions/66914/how-to-change-desktop-background-from-command-line-in-unity
 sudo -u ubuntu sh -c "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS} gsettings set org.gnome.desktop.background picture-uri \'file://${IMG_DEST}\'"
 
