@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.31 2011/09/29 17:24:19 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.32 2015/04/27 14:19:31 ttaauu Exp $
 # $Name:  $
 #
 
@@ -101,6 +101,7 @@ default_src_files = [ "$GXP_DIR",
                       "$GXP_DIR/gxpbin",
                       "$GXP_DIR/gxpbin/bomb",
                       "$GXP_DIR/gxpbin/bcp",
+                      "$GXP_DIR/gxpbin/blkcpc",
                       "$GXP_DIR/gxpbin/conn",
                       "$GXP_DIR/gxpbin/gifconfig",
                       "$GXP_DIR/gxpbin/psfind",
@@ -626,6 +627,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.32  2015/04/27 14:19:31  ttaauu
+# added blkcpc and blkcpm
+#
 # Revision 1.31  2011/09/29 17:24:19  ttaauu
 # 2011-09-30 Taura
 #
