@@ -1,0 +1,134 @@
+#!/bin/bash
+
+this_dir=$(dirname $(realpath $0))
+
+# file=/dev/sda
+# clients=10.0.3.[[100-199]]
+# blk_sz=$((100 * 2**20)) # 100MB at a time
+# rsh_method=ssh
+
+src_file=$(pwd)/hoge
+dst_file=hage
+clients="x 3"
+blk_sz=$((10))
+rsh_method=sh
+
+wallpaper_dir=.
+
+never_quit_above=${never_quit_above:-100}
+
+# get_file_size FILE prints the size of FILE
+get_file_size() {
+    if [ -e $1 ]; then
+	python -c "import os,sys; print os.lseek(os.open(sys.argv[1], os.O_RDONLY), 0, os.SEEK_END)" $1
+    else
+	echo "error: file \"$1\" does not exist." 1>&2 
+	return 1
+    fi
+}
+
+bring_up_clients() {
+    gxpc use ${rsh_method} $(hostname) .
+    gxpc explore --children_soft_limit 200 ${clients}
+    gxpc e mkdir -p "/tmp/tau/\${GXP_EXEC_IDX}"
+    gxpc cd "/tmp/tau/\${GXP_EXEC_IDX}"
+}
+
+# check if we should continue despite that
+# some clients have failed
+check_continue() {
+    nm=$1			# number of masters (0 or 1)
+    nc=$2			# number of clients still alive
+    n_clients=$3		# the original number of clients
+    sz_done=$4 			# bytes that we have copied
+    sz_total=$5			# bytes we need to copy in total
+    never_quit_above=$6		# if the number of clients is this much,
+                                # we alywas contine
+    echo "${nm} master, ${nc}/${n_clients} clients, ${sz_done}/${sz_total} done"
+
+    # if the master has gone, no way to proceed
+    if [ ${nm} -lt 1 ]; then
+	echo "master failed. bail out." 1>&2
+	return 1
+    fi
+
+    if [ ${nc} -ge ${never_quit_above} ]; then
+	return 0
+    fi
+
+    # otherwise, we determine if we continue or not,
+    # by the progress we have made and the number of
+    # clients alive. the intuition is that, (a) if some
+    # clients have died pretty early, we don't lose
+    # too much by restarting it from scratch, possibly
+    # after replacing failed clients with new ones.
+    # (b) if we have made much progress (say 50%), then
+    # we should be more patient.  to sum up (a) and (b),
+    # we continue if :
+    #  live clients      bytes we have copied 
+    # ---------------- + ---------------------- > 0.9
+    #  total clients        bytes in total
+    #
+    if [ $((${sz_done} * ${n_clients} + ${nc} * ${sz_total})) -lt $((${sz_total} * ${n_clients} * 9 / 10)) ] ; then
+	echo "error: too many clients failed. bail out." 1>&2
+	return 1
+    fi
+
+    return 0			# OK, go ahead
+}
+
+copy_wallpapers() {
+    gxpc mw bcp ${this_dir}/change_wallpaper ${wallpaper_dir}
+    gxpc e chmod +x ${wallpaper_dir}/change_wallpaper
+    gxpc mw bcp ${this_dir}/start.png        ${wallpaper_dir}
+    gxpc mw bcp ${this_dir}/success.png      ${wallpaper_dir}
+    gxpc mw bcp ${this_dir}/failure.png      ${wallpaper_dir}
+}
+
+
+main() {
+    # get the size of the source file/disk
+    sz=$(get_file_size ${src_file})
+    if [ "${sz}" = "" ]; then return 1; fi
+
+    # clean up daemons
+    gxpc quit
+    # bring up the local daemon and get its name
+    master_name=$(gxpc e echo '${GXP_GUPID}')
+    echo "master id = ${master_name}"
+    n_masters=$(gxpc e hostname | wc -l) #  0 or 1
+    # bring up clients and get the number of them
+    # they also go to their working dir
+    bring_up_clients
+    n_clients=$(gxpc -G ${master_name} e hostname | wc -l)
+
+    copy_wallpapers
+    gxpc e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/start.png
+
+    echo "copying ${src_file} (${sz} bytes) to ${n_clients} clients"
+    # bytes we have copied so far
+    a=0
+    nm=${n_masters}
+    nc=${n_clients}
+    while [ ${a} -lt ${sz} ]; do
+	# judge if we should continue or bail out
+	if ! check_continue ${nm} ${nc} ${n_clients} ${a} ${sz} ${never_quit_above}; then
+	    gxpc e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/failure.png
+	    return 1
+	fi
+	# real work. copy bytes a..b of the file
+	b=$((${a} + ${blk_sz}))
+	gxpc mw --master blkcpm "blkcpc --creat --range ${a}:${b} ${src_file} ${dst_file} || (${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/failure.png; exit 1)"
+	# remove clients that have failed
+	gxpc smask
+	# check if the master is alive
+	nm=$(gxpc e -g ${master_name} hostname | wc -l)
+	# check how many clients are alive
+	nc=$(gxpc e -G ${master_name} hostname | wc -l)
+	a=${b}
+    done
+    gxpc e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/success.png
+    echo "${nc} clients succeeded"
+}
+
+main
