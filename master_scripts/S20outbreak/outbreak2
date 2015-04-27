@@ -97,6 +97,8 @@ main() {
     # bring up the local daemon and get its name
     master_name=$(gxpc e echo '${GXP_GUPID}')
     echo "master id = ${master_name}"
+    # get the number of masters; it SHOULD BE one,
+    # but we still check if the master has brought up
     n_masters=$(gxpc e hostname | wc -l) #  0 or 1
     # bring up clients and get the number of them
     # they also go to their working dir
@@ -107,14 +109,17 @@ main() {
     gxpc e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/start.png
 
     echo "copying ${src_file} (${sz} bytes) to ${n_clients} clients"
-    # bytes we have copied so far
+    # a = bytes we have copied so far
     a=0
+    # the number of masters that haven't failed (must be one)
     nm=${n_masters}
+    # the number of clients that haven't failed
     nc=${n_clients}
+    # the main copying loop
     while [ ${a} -lt ${sz} ]; do
 	# judge if we should continue or bail out
 	if ! check_continue ${nm} ${nc} ${n_clients} ${a} ${sz} ${never_quit_above}; then
-	    gxpc e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/failure.png
+	    gxpc -G ${master_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/failure.png
 	    return 1
 	fi
 	# real work. copy bytes a..b of the file
@@ -128,7 +133,7 @@ main() {
 	nc=$(gxpc e -G ${master_name} hostname | wc -l)
 	a=${b}
     done
-    gxpc e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/success.png
+    gxpc -G ${master_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/success.png
     echo "${nc} clients succeeded"
 }
 
