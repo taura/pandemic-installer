@@ -2,16 +2,17 @@
 
 this_dir=$(dirname $(realpath $0))
 
-# file=/dev/sda
-# clients=10.0.3.[[100-199]]
-# blk_sz=$((100 * 2**20)) # 100MB at a time
-# rsh_method=ssh
+src_file=/dev/sda
+dst_file=/dev/sda
+clients=10.0.3.[[100-199]]
+blk_sz=$((100 * 2**20)) # 100MB at a time
+rsh_method=ssh
 
-src_file=$(pwd)/hoge
-dst_file=hage
-clients="x 3"
-blk_sz=$((10))
-rsh_method=sh
+#src_file=$(pwd)/hoge
+#dst_file=hage
+#clients="x 3"
+#blk_sz=$((10))
+#rsh_method=sh
 
 wallpaper_dir=.
 
