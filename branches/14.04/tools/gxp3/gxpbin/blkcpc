@@ -1,0 +1,839 @@
+#!/usr/bin/env python
+# Copyright (c) 2005-2009 by Kenjiro Taura. All rights reserved.
+#
+# THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY 
+# EXPRESSED OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
+# 
+# Permission is hereby granted to use or copy this program
+# for any purpose,  provided the above notices are retained on all 
+# copies. Permission to modify the code and to distribute modified
+# code is granted, provided the above notices are retained, and
+# a notice that the code was modified is included with the above
+# copyright notice.
+#
+# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.1 2015/04/27 14:19:32 ttaauu Exp $
+# $Name:  $
+#
+
+import errno,os,random,re,select,socket,string,sys,time
+import cPickle
+import ifconfig2,opt2
+
+dbg=1
+
+def Ws(s):
+    sys.stdout.write(s)
+    sys.stdout.flush()
+
+def Es(s):
+    sys.stderr.write(s)
+    sys.stderr.flush()
+    
+class bcp_cmd_opts(opt2.cmd_opts):
+    def __init__(self):
+        #             (type, default)
+        # types supported
+        #   s : string
+        #   i : int
+        #   f : float
+        #   l : list of strings
+        #   None : flag
+	opt2.cmd_opts.__init__(self)
+        # log file
+        self.pkt_sz = ("i", 8 * 1024 * 1024)
+        self.show_progress = ("s", "^$")
+        self.verbosity = ("i", 1)
+        # --connect_prio 10.1,10.2
+        self.connect_prio = ("s", "")
+        # range to copy (default = the whole file)
+        self.range = ("s", ":")
+        self.min_receivers = ("i", 1)
+        self.creat = (None, 0)
+        self.trunc = (None, 0)
+        self.help = (None, 0)
+
+    def safe_num(self, x):
+        """
+        convert string to int without exception
+           ""    -> ""
+           "345" -> 345
+           "abc" -> None
+
+        """
+        if x == "": return ""
+        try:
+            return int(x)
+        except ValueError:
+            return None
+        except:
+            raise
+
+    def postcheck(self):
+        """
+        wrap up command line argument processing
+        """
+        # "10.1,10.2" --> [ re.compile("10.1"), re.compile("10.2") ]
+        prio,msg = ifconfig2.compile_prio(self.connect_prio)
+        if prio is None:
+            Es("bcp : %s\n" %  msg)
+            return -1
+        self.connect_prio = prio
+        # translate --range argument (like "123:456")
+        # into begin_offset = 123 and end_offset = 456
+        # if if the first component is missing it defaults to zero
+        # if if the second component is missing it defaults to -1,
+        # which is then treated as the end of file in the 
+        # transfer stage
+        begin_end = string.split(self.range, ":", 1)
+        if len(begin_end) != 2:
+            Es("bcp : invalid arg to --range (%s). it must be 'num:num'\n" % begin_end)
+            return -1
+        [ begin,end ] = map(self.safe_num, begin_end)
+        if begin is None or end is None:
+            Es("bcp : invalid arg to --range (%s). it must be 'num:num'\n" % begin_end)
+            return -1
+        if begin == "": begin = 0
+        if end == "":   end = -1 # whole
+        self.begin = begin
+        self.end = end
+        return 0
+
+class ring_connector:
+    """
+    a class that connects all clients in a ring fashion.
+    """
+    def up(self, s):
+        """
+        send s to file descriptor 3, which is connected to
+        master (blkcpm)'s stdin
+        """
+        os.write(3, s)
+
+    def getline(self):
+        """
+        get a line from the master (blkcpm)'s
+        stdout
+        """
+        return self.master_fp.readline()
+
+    def safe_open_to_read(self, filename):
+        """
+        open filename to read without exception
+        (return -1 if failed)
+        """
+        try:
+            return os.open(filename, os.O_RDONLY)
+        except OSError,e:
+            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
+            return -1
+
+    def safe_open_to_write(self, filename):
+        """
+        open filename to write without exception.
+        (return -1 if failed).
+        --create -> create if not exist
+        --trunc  -> truncate (zero) if exist
+        """
+        flags = os.O_WRONLY
+        if self.opts.creat:
+            flags = flags | os.O_CREAT
+        if self.opts.trunc:
+            flags = flags | os.O_TRUNC
+        try:
+            return os.open(filename, flags, 0644)
+        except OSError,e:
+            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
+            return -1
+
+    def open_src(self, src_file):
+        """
+        open the source file at a process with idx=0.
+        return value:
+        None : I am not the source, thus didn't try to open it
+        -1   : I am the source and I failed to open
+        >=0  : I am the source and fd is the file descriptor
+        set the following fields
+        self.src_idx     : sender idx (always 0)
+        self.src_file    : the name of the source file
+        self.src_file_sz : the size of the source file, or -1
+                           in non-source processes or when
+                           the source process failed to open it
+
+        src_file_sz is properly set only at the source process
+        at this stage. other processes set it to -1.
+        """
+        self.src_idx = 0
+        self.src_file = src_file
+        self.src_file_sz = -1
+        fd = None
+        if self.exec_idx == self.src_idx:
+            fd = self.safe_open_to_read(src_file)
+            if fd == -1:
+                sz = -1
+            else:
+                sz = os.lseek(fd, 0, os.SEEK_END)
+            if dbg>=3:
+                Es("[%s:%d] : src_file=%s, sz=%d\n"
+                   % (self.host, self.exec_idx, src_file, sz))
+            self.src_file_sz = sz
+        return fd
+
+    def open_dst(self, src_file, dst_file):
+        """
+        try to open dst_file (unless this process 
+        is the source and src and dst are the same).
+        return 
+           None : if I am the source and src = dst, so I
+                  did not try to write-open it
+             -1 : I tried and failed to write-open it 
+            >=0 : I successfully write-opened it 
+        it sets 
+        self.dst_file to the destination file name
+        """
+        self.dst_file = dst_file
+        if self.exec_idx == self.src_idx and \
+           os.path.exists(dst_file) and \
+           os.path.samefile(src_file, dst_file):
+            return None
+        else:
+            return self.safe_open_to_write(dst_file)
+
+
+    def open_server_socket(self):
+        """
+        open server (listen) socket
+
+        set:
+        self.ss    : server socket
+        self.host  : hostname
+        self.port  : port number of the socket
+        """
+        if self.up_fd >= 0 or self.down_fd >= 0:
+            ss = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            ss.bind(("", 0))
+            ss.listen(10)
+            self.ss = ss
+            ip_addrs = ifconfig2.get_my_addrs(self.opts.connect_prio)
+            self.ip_addr = ip_addrs[0]
+            _,self.port = ss.getsockname()
+        else:
+            self.ss = None
+            self.ip_addr = None
+            self.port = 0
+
+    def exchange_end_points(self):
+        """
+        share who will send the file and who
+        receive (and write to) it.
+        they send info to the master (blkcpm)
+        and get them back from the master.
+
+        in the send, it sets self.players dictionary
+        that collects info about all participating
+        clients.
+
+            idx -> (ds,dr,idx,np,host,ip,port)
+
+        ds : 1 if this process will send
+        dr : 1 if this process will receive
+        idx : exec_idx of ths process
+        np : number of processes (the master doesn't know it)
+        host : hostname of the process
+        ip : ip address of the process
+        port : port number of the socket
+
+        """
+        # am I the sender?
+        do_send = (self.up_fd is not None and self.up_fd != -1)
+        # am I a receiver?
+        do_recv = (self.down_fd is not None and self.down_fd != -1)
+        # open server socket
+        self.open_server_socket()
+        # send my info to the master
+        self.up("%d %d %d %d %s %s %d %d\n" 
+                % (do_send, do_recv,
+                   self.exec_idx, self.n_procs, self.host, 
+                   self.ip_addr, self.port,
+                   self.src_file_sz))
+        # receive info about all clients back from the master
+        players = {}
+        n_receivers = 0
+        n_senders = 0
+        src_host = None
+        for i in range(self.n_procs):
+            [ ds,dr,idx,np,host,ip,port,sz ] \
+                = string.split(self.getline())
+            ds = int(ds)
+            dr = int(dr)
+            idx = int(idx)
+            np = int(np)
+            port = int(port)
+            sz = int(sz)
+            if ds or dr:
+                # processes that neither send nor recv 
+                # are not involved
+                players[idx] = (ds,dr,idx,np,host,ip,port,sz)
+            if ds:
+                # this process is the sender
+                src_host = host
+                n_senders = n_senders + 1
+                # so it MUST HAVE successfully read-open the file
+                assert (sz >= 0), sz
+            else:
+                assert (sz == -1)
+            if dr:
+                # this process is a receiver; count them
+                n_receivers = n_receivers + 1
+        if dbg>=3:
+            Es("[%s:%d] : %d senders, %d receivers\n"
+               % (self.host, self.exec_idx, n_senders, n_receivers))
+        if n_senders != 1:
+            if self.exec_idx == 0:
+                Es("%s : BUG: %d (> 1) senders!\n" % \
+                   (self.host, n_senders))
+            return -1
+        if self.exec_idx == 0:
+            if n_receivers == 0:
+                Es("[%s:%d] : warning: no receivers\n" % \
+                   (self.host, self.exec_idx))
+            else:
+                if dbg>=2:
+                    Es("[%s:%d] : from %s (idx=%d) to %d receivers\n" \
+                       % (self.host, self.exec_idx, 
+                          src_host, self.src_idx, n_receivers))
+        # get file size reported by src_idx
+        ds,_,_,_,_,_,_,sz = players[self.src_idx]
+        if sz == -1:
+            assert (not ds)
+            assert (self.src_file_sz == -1), self.src_file_sz
+        self.src_file_sz = sz
+        self.n_senders = n_senders
+        self.n_receivers = n_receivers
+        self.players = players
+        if self.src_file_sz == -1:
+            return -1           # as if there are no receivers
+        else:
+            return n_receivers
+        
+    def enlarge_buf(self, so, level, buftype):
+        """
+        enlarge socket buffer to make transfer faster
+        """
+        target_sz = 1024 * 1024
+        ok = so.getsockopt(level, buftype)
+        sz = target_sz
+        # INV:
+        #  <= ok is safe
+        #  
+        for i in range(0, 10):
+            try:
+                # try to increase up to sz
+                so.setsockopt(level, buftype, sz)
+            except socket.error,e:
+                if e.args[0] == errno.ENOBUFS:
+                    sz = (ok + sz) / 2
+                else:
+                    raise
+            break
+        return so.getsockopt(level, buftype)
+
+    def connect_to(self, host, ip, port):
+        """
+        connect to ip:port
+        if it does not become writable within 5 sec,
+        return -1
+        """
+        rs = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if dbg>=3:
+            Es("[%s:%d] : connect to %s %s:%d\n" 
+               % (self.host, self.exec_idx, host, ip, port))
+        rs.setblocking(0)
+        err = rs.connect_ex((ip, port))
+        if err != errno.EINPROGRESS:
+            raise
+        _,W,_ = select.select([], [rs], [], 5.0)
+        if len(W) == 0:
+            Es("[%s:%d] : could not connect to %s %s:%d\n" % \
+               (self.host, self.exec_idx, host, ip, port))
+            return -1
+        rs.setblocking(1)
+        if dbg>=3:
+            Es("[%s:%d] : connected to %s %s:%d\n" 
+               % (self.host, self.exec_idx, host, ip, port))
+        self.enlarge_buf(rs, socket.SOL_SOCKET,
+                         socket.SO_SNDBUF)
+        return rs
+        
+    def accept(self):
+        """
+        accept a connection
+        """
+        if dbg>=3:
+            Es("[%s:%d] : accept\n" 
+               % (self.host, self.exec_idx))
+        ls,_ = self.ss.accept()
+        self.ss.close()
+        self.enlarge_buf(ls, socket.SOL_SOCKET,
+                         socket.SO_RCVBUF)
+        return ls
+
+    def make_ring(self):
+        """
+        connect all processes in a ring.
+        we have collected info about all processes
+        in self.players.
+        all processes sort them in the same order.
+        each process connects to the process that 
+        immediately follows it in the sorted list.
+        (the last one connects to the first one).
+
+        """
+        players_list = self.players.values()
+        sort_key = (lambda (ds,dr,idx,np,host,ip,port,sz): (-ds,-dr,idx))
+        players_list.sort(key=sort_key)
+        # get my position in the list -> rank
+        n = len(players_list)
+        # find my position (rank) in the sorted list
+        self.rank = 0
+        for _,_,idx,_,_,_,_,_ in players_list:
+            if idx == self.exec_idx:
+                # OK, this is me
+                break
+            self.rank = self.rank + 1
+        assert self.rank < n
+        # display the sorted list for debug
+        if dbg>=3 or (dbg>=2 and self.rank == 0):
+            Es("[%s:%d] : Ring:\n" % (self.host, self.exec_idx))
+            rk = 0
+            for ds,dr,idx,np,host,ip,port,sz in players_list:
+                # rank : role host:port
+                Es("[%s:%d] : rank %d = %d %d %s %s:%d %d\n" 
+                   % (self.host, self.exec_idx,
+                      rk, ds, dr, host, ip, port, sz))
+                rk = rk + 1
+        # get the position (rank) of the source process in the list
+        self.src_rank = 0
+        for _,_,idx,_,_,_,_,_ in players_list:
+            if idx == self.src_idx:
+                break
+            self.src_rank = self.src_rank + 1
+        assert self.src_rank < n
+        # the last destination's rank
+        self.final_rank = (self.src_rank + n - 1) % n
+        # my right neighbor
+        _,_,_,_,right_host,right_ip,right_port,_ \
+            = players_list[(self.rank + 1) % n]
+        # my left neighbor
+        _,_,_,_,left_host,left_ip,left_port,_ \
+            = players_list[(self.rank - 1) % n]
+        # connect to my right neighbor
+        self.right_so \
+            = self.connect_to(right_host, right_ip, right_port)
+        self.right_host = right_host
+        # accept connection from my left neighbor
+        self.left_so = self.accept()
+        self.left_host = left_host
+        return 0
+
+    def test_ring(self):
+        """
+        transfer one byte along the ring.
+        the sender checks if the byte gets back to it.
+        """
+        if self.rank == self.src_rank:
+            if dbg>=3:
+                Es("[%s:%d] : send a token to test ring\n"
+                   % (self.host, self.exec_idx))
+            self.right_so.send("a")
+            x = self.left_so.recv(1)
+            if x != "a":
+                Es("[%s:%d] : could not begin transfer\n" 
+                   % (self.host, self.exec_idx))
+                return -1
+            if dbg>=3:
+                Es("[%s:%d] : received a token back. ring is OK\n" \
+                   % (self.host, self.exec_idx))
+        else:
+            if dbg>=3:
+                Es("[%s:%d] : wait for a token\n" 
+                   % (self.host, self.exec_idx))
+            x = self.left_so.recv(1)
+            if dbg>=3:
+                Es("[%s:%d] : last receiver received a token\n" 
+                   % (self.host, self.exec_idx))
+            self.right_so.send(x)
+        return 0
+
+    def recv_bytes(self, so, sz):
+        """
+        receive exactly sz bytes from the socket so
+        """
+        X = []
+        sz_recved = 0
+        while sz_recved < sz:
+            x = so.recv(sz - sz_recved)
+            assert (len(x) > 0), (sz_recved, sz)
+            X.append(x)
+            sz_recved = sz_recved + len(x)
+        return string.join(X, "")
+
+    def share_stat_info(self):
+        """
+        share stat info about the file, so that
+        we can get the file permission right
+        """
+        if self.rank == self.src_rank:
+            self.stat_info = os.stat(self.src_file)
+            stat_info_s = cPickle.dumps(self.stat_info)
+            stat_size = len(stat_info_s)
+            pkt = "%9d %s" % (stat_size, stat_info_s)
+            self.right_so.send(pkt)
+            stat_size_back = self.recv_bytes(self.left_so, 10)
+            if stat_size_back != ("%9d " % stat_size):
+                Es("[%s:%d] : could not begin transfer\n" 
+                   % (self.host, self.exec_idx))
+                return -1
+            if dbg>=3:
+                Es("[%s:%d] : received a stat size token back. ring is OK\n"
+                   % (self.host, self.exec_idx))
+            stat_info_back = self.recv_bytes(self.left_so, int(stat_size_back))
+            if stat_info_back != stat_info_s:
+                Es("[%s:%d] : could not begin transfer\n" 
+                   % (self.host, self.exec_idx))
+                return -1
+            if dbg>=3:
+                Es("[%s:%d] : received a stat info token back. ring is OK\n" 
+                   % (self.host, self.exec_idx))
+        else:
+            if dbg>=3:
+                Es("[%s:%d] : wait for a stat info\n" 
+                   % (self.host, self.exec_idx))
+            stat_size = self.recv_bytes(self.left_so, 10)
+            stat_info_s = self.recv_bytes(self.left_so, int(stat_size))
+            self.right_so.send(stat_size + stat_info_s)
+            self.stat_info = cPickle.loads(stat_info_s)
+        return 0
+        
+    def setup(self, src_spec, dst_spec):
+        """
+        return -1 : if anybody should continue
+        """
+        self.host = socket.gethostname()
+        self.master_fp = os.fdopen(4, "rb")
+        if os.environ.has_key("GXP_NUM_EXECS"):
+            self.n_procs = int(os.environ["GXP_NUM_EXECS"])
+            self.exec_idx = int(os.environ["GXP_EXEC_IDX"])
+            self.gxp_host = os.environ["GXP_HOSTNAME"]
+        else:
+            self.n_procs = 1
+            self.exec_idx = 0
+            self.gxp_host = ""
+        self.up_fd = self.open_src(src_spec)
+        # the source failed to open. quit
+        # if self.up_fd == -1: return -1
+        # some may have failed to write-open. still continue
+        self.down_fd = self.open_dst(src_spec, dst_spec)
+        nr = self.exchange_end_points()
+        if nr < self.opts.min_receivers: return -1
+        if self.up_fd >= 0 or self.down_fd >= 0:
+            assert self.players.has_key(self.exec_idx)
+        else:
+            assert (not self.players.has_key(self.exec_idx)), \
+                (self.exec_idx, self.players, 
+                 self.up_fd, self.down_fd)
+            # I do not participate. I quite (others may continue)
+            return -1
+        if self.make_ring() == -1: return -1
+        if self.test_ring() == -1: return -1
+        if self.share_stat_info() == -1: return -1
+        if re.match(self.opts.show_progress, self.host) \
+           or (dbg>=2 and self.rank == self.final_rank):
+            self.show_progress = 1
+        else:
+            self.show_progress = 0
+        return 0                        # OK
+
+    def finish(self):
+        """
+        wrap up. get the file permission right.
+        """
+        if self.rank != self.src_rank:
+            os.chmod(self.dst_file, self.stat_info.st_mode)
+        return 0
+
+    def safe_read(self, fd, sz):
+        """
+        read without exception
+        """
+        try:
+            return os.read(fd, sz)
+        except OSError,e:
+            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
+            return -1
+
+    def read_bytes(self, fd, sz):
+        """
+        read exactly sz bytes from fd
+        """
+        X = []
+        sz_read = 0
+        while sz_read < sz:
+            x = self.safe_read(fd, sz - sz_read)
+            if x is None or len(x) == 0:
+                return None
+            sz_read = sz_read + len(x)
+            X.append(x)
+        return string.join(X, "")
+
+    def safe_write(self, fd, X):
+        """
+        write without exception
+        """
+        try:
+            return os.write(fd, X)
+        except OSError,e:
+            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
+            return -1
+
+    def write_all(self, fd, X):
+        """
+        write X bytes; never return prematurely
+        """
+        sz = len(X)
+        sz_written = 0
+        while sz_written < sz:
+            w = self.safe_write(fd, X[sz_written:])
+            if w == -1:
+                return -1
+            sz_written = sz_written + w
+        return 0                # OK
+
+    def safe_close(self, fd):
+        """
+        close withot an exception
+        """
+        try:
+            os.close(fd)
+            return 0
+        except OSError,e:
+            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
+            return -1
+
+    def transfer(self):
+        """
+        main procedure. transfer data along the ring
+        """
+        begin_offset = self.opts.begin
+        end_offset = self.opts.end
+        if end_offset == -1:
+            # this means we copy up to the end
+            end_offset = self.src_file_sz
+        # gracefully handle the case end_offset > file size
+        end_offset = min(end_offset, self.src_file_sz)
+        up_fd = self.up_fd
+        down_fd = self.down_fd
+        assert up_fd != -1
+        assert down_fd != -1
+        if up_fd is not None:
+            # position the read-cursor
+            os.lseek(up_fd, begin_offset, os.SEEK_SET)
+        if down_fd is not None:
+            # position the write-cursor
+            os.lseek(down_fd, begin_offset, os.SEEK_SET)
+        if dbg>=3 or (dbg>=2 and self.exec_idx == 0):
+            Es("[%s:%d] : %s %d - %d\n" 
+               % (self.host, self.exec_idx, self.src_file,
+                  begin_offset, end_offset))
+        T0 = time.time()        # start time
+        offset = begin_offset   # the offset we have written up to
+        pkt_sz = self.opts.pkt_sz
+        # the main loop.
+        while offset < end_offset:
+            sz_to_read = min(end_offset - offset, pkt_sz)
+            if up_fd is not None:
+                # source: read from the file
+                X = self.read_bytes(up_fd, sz_to_read)
+            else:
+                # not source. recv from the left neighbor
+                X = self.recv_bytes(self.left_so, sz_to_read)
+            assert (len(X) == sz_to_read), (len(X), sz_to_read)
+            if self.rank != self.final_rank:
+                # I am not the last receiver; forward it to the right
+                self.right_so.sendall(X)
+            if down_fd is not None:
+                # write to the file
+                if self.write_all(down_fd, X) == -1:
+                    break
+            offset = offset + len(X)
+        # determine I have suceeded
+        if down_fd is None:
+            # I did not write-open the file.
+            # I must be the sender. treat it as a success
+            ret = 0
+        else:
+            # try to close it. 
+            # I succeeded when I successfully close it
+            ret = self.safe_close(down_fd)
+        if self.rank == self.final_rank:
+            if dbg>=2:
+                Es("[%s:%d] : last receiver finished writing\n" 
+                   % (self.host, self.exec_idx))
+        if dbg>=3:
+            Es("[%s:%d] : close socket to right neibhbor\n" 
+               % (self.host, self.exec_idx))
+        self.right_so.close()
+        if dbg>=3:
+            Es("[%s:%d] : OK\n" % (self.host, self.exec_idx))
+        if dbg>=3:
+            Es("[%s:%d] : wait for socket from left neibhbor to be closed\n" 
+               % (self.host, self.exec_idx))
+        c = self.left_so.recv(1)
+        if c != "":
+            Es("[%s:%d] : bcp: error: socket not cleanly closed\n" 
+               % (self.host, self.exec_idx))
+            return -1
+        if ret == -1:
+            # error during close; msg must have been written
+            return -1
+        if dbg>=3:
+            Es("[%s:%d] : OK\n" % (self.host, self.exec_idx))
+        return 0
+
+    def usage(self, full):
+        Es(r"""usage:
+
+  gxpc mw --master blkcpm blkcpc [OPTIONS] SOURCE [DEST]
+
+Copy SOURCE on a host to DEST on all hosts.
+
+""")
+        if full == 0:
+            Es("Try --help to see detailed help.\n")
+        else:
+            Es(r"""
+ex.
+
+  gxpc mw --master blkcpm blkcpc /dev/sda
+  gxpc mw --master blkcpm blkcpc --range 10000:20000 /dev/sda
+
+Options:
+  --pkt_sz (default: 100000)
+    the maximum size each host receives in a single call to recv
+    system call. it limits the memory size.
+  --show_progress (default: "^$")
+    regular expression specifying which hosts should print their
+    progress. if verbosiy (below) is >=2, the last process in the
+    transfer pipeline will show the progress
+  --range (default: ":")
+    specify the range to cpy in byte offsets.  20000:30000 means
+    the 10000 bytes beginning from 20000 will be copied to
+    the same offset of the destination file.
+  --verbosity (default: 1)
+    specify how verbose it is
+  --connect_prio (default: "")
+    specify the priority of ip addresses to connect to in the form
+    of comma-separated regular expression. see CONNECT_PRIO example below.
+    quick example: --connect_prio 10,192  will prefer to use addresses
+    that begin with 10 most, those that begin with 192 next, and then others.
+
+CONNECT_PRIO:
+
+--connect_prio takes a comma-separeted list of regular expressions.
+All IP addresses of each host is matched against them in the specified
+order, and earlier in the list it matches, the higher priority it
+has. For example, let's say you have a host having three addresses
+127.0.0.1, 10.1.2.3, 10.2.3.4, and 123.234.45.56.  if you specify
+'--connect_prio 10', then 10.1.2.3 and 10.2.3.4 will have higher
+preference to the other two. If you have multiple addresses of the
+same priority, one is chosen arbitrarily but 127.0.0.1 is considered
+having the lower priority.  '--connect_prio 10.1,10.2' will give
+the highest priority to 10.1.2.3, the second highest to 10.2.3.4,
+and then the other two. Note that 10.1 is a regular expression, so
+it actually matches 1001, 1011, etc. If this is to be an issue,
+you should write '10\.,10\.2'.
+
+The word "priority" may be misleading, because as of now, each host
+simply announces its highest-priory address, and the host that
+connects to it connects to only that address. If this address is not
+connectable, it will simply fail (or block).  It does not try other
+addresses.  You may want to use a list to specify preferences depending
+on hosts concisely. For example, if you have a host X having 
+123.98.0.1 and 10.0.0.1 favoring the former, and another host Y
+having 123.99.0.1 and 10.0.0.2 favoring the latter, you may say
+--connect_prio 123.98,10.
+
+BUGS:
+
+It assumes connections are not blocked. If some connections are
+blocked, it will block 5sec and then quit, but even this has not been
+extensively tested. Assume this command is safe only when there are no
+firewall between hosts for now.
+
+""")
+        
+    def main(self, argv):
+        # bcp src [dest]
+        global dbg
+        opts = bcp_cmd_opts()
+        if opts.parse(argv) == -1: return 1
+        if opts.help:
+            # --help is given
+            self.usage(1)
+            return 1
+        elif len(opts.args) == 0:
+            # no file name given -> error
+            self.usage(0)
+            return 1
+        elif len(opts.args) == 1:
+            # only src given. dst = src
+            src_spec = opts.args[0]
+            dst_spec = src_spec
+        else:
+            # src and dst given
+            src_spec = opts.args[0]
+            dst_spec = opts.args[1]
+        self.opts = opts
+        dbg = opts.verbosity
+
+        t0 = time.time()
+        if self.setup(src_spec, dst_spec) == -1: return 1
+        t1 = time.time()
+        if self.transfer() == -1: return 1
+        t2 = time.time()
+        if self.finish() == -1: return 1
+        if self.rank == self.src_rank:
+            begin = self.opts.begin
+            end = self.opts.end
+            if end == -1: end = self.src_file_sz
+            Es(("[%s:%d] : %.3f sec to setup, %.3f sec to transfer " \
+                "%d bytes (%.3f MB/sec)\n" % \
+                (self.host, self.exec_idx, t1 - t0, t2 - t1,
+                 end - begin,
+                 (end - begin) / (1024.0 * 1024.0 * (t2 - t1)))))
+        return 0
+        
+def main():
+    return ring_connector().main(sys.argv[1:])
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+# $Log: blkcpc,v $
+# Revision 1.1  2015/04/27 14:19:32  ttaauu
+# added blkcpc and blkcpm
+#
+# Revision 1.11  2013/02/08 13:53:47  ttaauu
+# added --src_idx option to bcp
+#
+# Revision 1.10  2013/02/07 10:20:35  ttaauu
+# fixed bcp progres message. it now sets mode correctly
+#
+# Revision 1.9  2013/02/07 08:17:05  ttaauu
+# fix bcp so it transfers file permission mode
+#
+# Revision 1.8  2010/03/05 05:27:09  ttaauu
+# stop extending PYTHONPATH. see 2010-3-5 ChangeLog
+#
+# Revision 1.7  2009/06/06 14:06:26  ttaauu
+# added headers and logs
+#

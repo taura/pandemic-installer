@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.17 2010/09/30 18:40:02 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.18 2013/10/25 12:00:54 ttaauu Exp $
 # $Name:  $
 #
 
@@ -448,11 +448,10 @@ class primitive_channel_socket:
         try:
             self.so.nointr_connect(name)
         except socket.error,e:
-            return -1,e.args[0],e.args[1]
+            return -1,e
         except EnvironmentError,e:
-            return -1,e.args[0],e.args[1]
-        portability.set_close_on_exec_fd(conn.fileno(), 1)
-        return 0,0,""
+            return -1,e
+        return 0,None
     
     def getsockname(self):
         return self.so.getsockname()
@@ -1481,6 +1480,7 @@ class achannel(channel):
                 LOG("achannel.do_io(%d) : "
                     "accepted [%s]\n" % (self.fileno(), data))
             new_so,addr = data
+            # new_so.so.send("heeeeeee\n")
             ev = aevent_OK(new_so, addr)
             self.set_timeout(INF)
         return ev
@@ -2102,13 +2102,7 @@ class child_process(process_base):
             # n -> 'r',
             # it has descriptor n for reading, and for each 
             # entry n -> 'w, it has descriptor n for writing.
-            if 0:
-                for _,child_use,pipe in pipes:
-                    for mode,n in child_use:
-                        pipe.child_dup(n, mode)
-                    pipe.child_close()
-            else:
-                self.remap_file_descriptors(pipes)
+            self.remap_file_descriptors(pipes)
             # environment
             if self.env is None:
                 env = None
@@ -2271,6 +2265,8 @@ class ioman:
         self.mark_cold(ch)              # hot?
 
     def mark_garbage(self, ch):
+        if dbg>=2:
+            LOG("mark_garbage %s\n" % ch)
         if self.hot_channels.has_key(ch):
             del self.hot_channels[ch]
         if self.cold_channels.has_key(ch):
@@ -2563,6 +2559,67 @@ class ioman:
         if ev is not None: ch.process_event(ev)
         return ch,ev
 
+    # somewhat higher-level API
+    def add_read_fd(self, fd):
+        ch = rchannel(primitive_channel_fd(fd, 1))
+        self.add_rchannel(ch)
+        return ch
+    def add_write_fd(self, fd):
+        ch = wchannel(primitive_channel_fd(fd, 1))
+        self.add_wchannel(ch)
+        return ch
+    def add_sock(self, so):
+        pso = primitive_channel_socket(so, 1)
+        rch = rchannel(pso)
+        wch = rchannel(pso)
+        self.add_rchannel(rch)
+        self.add_wchannel(wch)
+        return rch,wch
+    def make_client_sock(self, so_af, so_type, addr):
+        so = mk_non_interruptible_socket(so_af, so_type)
+        pso = primitive_channel_socket(so, 1)
+        r,e = pso.connect(addr)
+        if r != 0:
+            raise e
+        else:
+            rch = rchannel(pso)
+            wch = wchannel(pso)
+            self.add_rchannel(rch)
+            self.add_wchannel(wch)
+            return rch,wch
+    def make_server_sock(self, so_af, so_type, addr, qlen):
+        so = mk_non_interruptible_socket(so_af, so_type)
+        so.bind(addr)
+        bound_addr = so.getsockname()
+        so.listen(qlen)
+        ch = achannel(primitive_channel_socket(so, 1))
+        self.add_rchannel(ch)
+        return ch
+
+    def make_child_proc(self, cmd, make_pipe=1, env=None, cwds=None, rlimits=None):
+        if env is None: env = {}
+        if cwds is None: cwds = []
+        if rlimits is None: rlimits = []
+        if make_pipe == 1:
+            # pipe_desc : list of (pipe_con,parent_use,child_use)
+            # parent_use : list of (mode,name,channel_con)
+            # child_use : list of (mode,name)
+            pipe_desc = [ (pipe_constructor_pipe, 
+                           [ ('w', 0, wchannel_process) ],
+                           [ ('r', 0) ]),
+                          (pipe_constructor_pipe, 
+                           [ ('r', 1, rchannel_process) ],
+                           [ ('w', 1) ]),
+                          (pipe_constructor_pipe, 
+                           [ ('r', 2, rchannel_process) ], 
+                           [ ('w', 2) ]) ]
+        else:
+            pipe_desc = []
+        proc,msg = self.spawn_generic(child_process, cmd, pipe_desc, env, cwds, rlimits)
+        if proc is None:
+            raise Exception(msg)
+        else:
+            return proc
 
 #
 # test functions
@@ -2614,6 +2671,9 @@ if 0 and __name__ == "__main__":
     test_recv_msg()
 
 # $Log: ioman.py,v $
+# Revision 1.18  2013/10/25 12:00:54  ttaauu
+# added higher-level APIs to ioman and a document for it
+#
 # Revision 1.17  2010/09/30 18:40:02  ttaauu
 # *** empty log message ***
 #

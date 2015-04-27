@@ -1,0 +1,32 @@
+#!/usr/bin/python
+import os,sys,string
+
+def Es(s):
+    sys.stderr.write(s)
+
+def send(s):
+    sys.stdout.write(s)
+
+def recv():
+    return sys.stdin.readline()
+
+def main():
+    n_procs = -1
+    recved = 0
+    while n_procs == -1 or recved < n_procs:
+        line = recv()
+        if line == "":
+            Es("blkcpm: error: some clients "
+               "may have died prematurely; the master quits\n")
+            break
+        [ ds,dr,idx,np,host,ip,port,sz ] = string.split(line)
+        np = int(np)
+        if n_procs == -1:
+            n_procs = np
+        else:
+            assert (n_procs == np),(n_procs,np)
+        send(line)
+        recved = recved + 1
+
+main()
+
