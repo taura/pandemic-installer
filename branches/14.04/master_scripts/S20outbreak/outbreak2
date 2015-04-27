@@ -70,8 +70,8 @@ check_continue() {
     # ---------------- + ---------------------- > 0.9
     #  total clients        bytes in total
     #
-    if [ $((${sz_done} * ${n_clients} + ${nc} * ${sz_total})) -lt $((${sz_total} * ${n_clients} * 9 / 10)) ] ; then
-	echo "error: too many clients failed. bail out." 1>&2
+    if [ $((${sz_done} * ${n_clients} + ${nc} * ${sz_total})) -le $((${sz_total} * ${n_clients} * 9 / 10)) ] ; then
+	echo "error: too few clients left. bail out." 1>&2
 	return 1
     fi
 
@@ -124,7 +124,7 @@ main() {
 	fi
 	# real work. copy bytes a..b of the file
 	b=$((${a} + ${blk_sz}))
-	gxpc mw --master blkcpm "blkcpc --creat --range ${a}:${b} ${src_file} ${dst_file} || (${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/failure.png; exit 1)"
+	gxpc mw --master blkcpm "blkcpc --min_receivers 0 --creat --range ${a}:${b} ${src_file} ${dst_file} || (${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/failure.png; exit 1)"
 	# remove clients that have failed
 	gxpc smask
 	# check if the master is alive
