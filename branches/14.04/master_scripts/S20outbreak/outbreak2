@@ -37,9 +37,14 @@ get_file_size() {
     fi
 }
 
+get_pingable_clients() {
+    make -s -f ping.mk -j 
+}
+
 bring_up_clients() {
+    echo "clients: $(get_pingable_clients)"
     gxpc use ${rsh_method} $(hostname) .
-    gxpc explore --children_soft_limit 200 ${clients}
+    gxpc explore --children_soft_limit 200 $(get_pingable_clients)
     gxpc e mkdir -p "/tmp/tau/\${GXP_EXEC_IDX}"
     gxpc cd "/tmp/tau/\${GXP_EXEC_IDX}"
 }
@@ -105,7 +110,7 @@ copy_block() {
     wallpaper_dir=$6		# wallpaper dir (ugly)
 
     max_retries=4		# we try (max_retries + 1) times
-    for i in $(seq 0 ${max_tries}); do
+    for i in $(seq 0 ${max_retries}); do
 	if [ $i -gt 0 ] ; then
 	    echo "retry with reachable processes ($i/${max_tries})."
 	fi
