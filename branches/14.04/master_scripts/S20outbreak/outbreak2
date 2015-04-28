@@ -2,13 +2,15 @@
 
 this_dir=$(dirname $(realpath $0))
 
-test_mode=0
+test_mode=1
 
 if [ ${test_mode} = 0 ] ; then
     # honban. /dev/sda -> /dev/sda
     src_file=/dev/sda
     dst_file=/dev/sda
-    clients=10.0.3.[[100-199]]
+    client_prefix=10.0.3.
+    client_last_octet_begin=100
+    client_last_octet_end=199
     blk_sz=$((10 * 2**20)) # 100MB at a time
     rsh_method=ssh
 else
@@ -38,13 +40,16 @@ get_file_size() {
 }
 
 get_pingable_clients() {
-    make -s -f ping.mk -j 
+    make -s -f ping.mk -j address_prefix=${client_prefix} last_octet_begin=${client_last_octet_begin} last_octet_end=${client_last_octed_end}
 }
 
 bring_up_clients() {
-    echo "clients: $(get_pingable_clients)"
+    if [ "${clients}" = "" ]; then
+	clients=$(get_pingable_clients)
+    fi
+    echo "outbreak: clients: ${clients}"
     gxpc use ${rsh_method} $(hostname) .
-    gxpc explore --children_soft_limit 200 $(get_pingable_clients)
+    gxpc explore --children_soft_limit 200 ${clients}
     gxpc e mkdir -p "/tmp/tau/\${GXP_EXEC_IDX}"
     gxpc cd "/tmp/tau/\${GXP_EXEC_IDX}"
 }
@@ -59,11 +64,11 @@ check_continue() {
     sz_total=$5			# bytes we need to copy in total
     never_quit_above=$6		# if the number of clients is this much,
                                 # we alywas contine
-    echo "${nm} master, ${nc}/${n_clients} clients, ${sz_done}/${sz_total} done"
+    echo "outbreak: ${nm} master, ${nc}/${n_clients} clients, ${sz_done}/${sz_total} ($((${sz_done} * 100 / ${sz_total}))%) done"
 
     # if the master has gone, no way to proceed
     if [ ${nm} -lt 1 ]; then
-	echo "master failed. bail out." 1>&2
+	echo "outbreak: master failed. bail out." 1>&2
 	return 1
     fi
 
@@ -85,7 +90,7 @@ check_continue() {
     #  total clients        bytes in total
     #
     if [ $((${sz_done} * ${n_clients} + ${nc} * ${sz_total})) -le $((${sz_total} * ${n_clients} * 9 / 10)) ] ; then
-	echo "error: too few clients left. bail out." 1>&2
+	echo "outbreak: too few clients left. bail out." 1>&2
 	return 1
     fi
 
@@ -112,13 +117,13 @@ copy_block() {
     max_retries=4		# we try (max_retries + 1) times
     for i in $(seq 0 ${max_retries}); do
 	if [ $i -gt 0 ] ; then
-	    echo "retry with reachable processes ($i/${max_tries})."
+	    echo "outbreak: retry with reachable processes ($i/${max_retries})."
 	fi
 	n_reachables=$(gxpc --timeout 3.0 ping | wc -l)
 	gxpc smask
 	n_succeeded=$(gxpc --timeout 10.0 mw --master blkcpm "blkcpc --min_receivers 0 --creat --range ${a}:${b} ${src_file} ${dst_file}" | grep OK | wc -l)
 	if [ ${n_reachables} = ${n_succeeded}  ]; then
-	    echo "great, no processes failed. move on."
+	    # echo "great, no processes failed. move on."
 	    break
 	else 
 	    if [ $((${n_reachables} - ${n_succeeded})) = 1 ]; then
@@ -126,10 +131,10 @@ copy_block() {
 		# otherwise, more than one processes failed,
 		# and it may be a cascaded failure due to network 
 		# disconnect. retry
-		echo "1 process failed. drop it."
+		echo "outbreak: one process failed. drop it out."
 		gxpc smask
 	    else
-		echo "$((${n_reachables} - ${n_succeeded})) processed failed."
+		echo "outbreak: $((${n_reachables} - ${n_succeeded})) processes failed."
 	    fi
 	fi
     done
@@ -143,12 +148,12 @@ main() {
     # get the size of the source file/disk
     sz=$(get_file_size ${src_file})
     if [ "${sz}" = "" ]; then return 1; fi
-
+    echo "outbreak: copy ${src_file} -> ${dst_file}, size = ${sz}."
     # clean up daemons
     gxpc quit
     # bring up the local daemon and get its name
     master_name=$(gxpc e echo '${GXP_GUPID}')
-    echo "master id = ${master_name}"
+    echo "outbreak: master id = ${master_name}"
     # get the number of masters; it SHOULD BE one,
     # but we still check if the master has brought up
     n_masters=$(gxpc e hostname | wc -l) #  0 or 1
@@ -156,13 +161,15 @@ main() {
     # they also go to their working dir
     bring_up_clients
     n_clients=$(gxpc -G ${master_name} e hostname | wc -l)
+    echo "outbreak: reached ${n_clients} clients"
 
     # copy the wallpaper changer and images to clients
     copy_wallpapers ${master_name}
     # change clients' wallpapers to the default one
     gxpc -G ${master_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/start.png
 
-    echo "copying ${src_file} (${sz} bytes) to ${n_clients} clients"
+    start_time=$(date +%s)
+
     # a = bytes we have copied so far
     a=0
     # the number of masters that haven't failed (must be one)
@@ -171,6 +178,9 @@ main() {
     nc=${n_clients}
     # the main copying loop
     while [ ${a} -lt ${sz} ]; do
+	now=$(date +%s)
+	sec_since_start=$((${now} - ${start_time}))
+	echo "outbreak: $(date +%H:%M:%S) (${sec_since_start} sec since start)"
 	# judge if we should continue or bail out
 	if ! check_continue ${nm} ${nc} ${n_clients} ${a} ${sz} ${never_quit_above}; then
 	    return 1
@@ -187,7 +197,7 @@ main() {
     done
     # congrat. if you have gone thus far, you succeeded
     gxpc -G ${master_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/success.png
-    echo "${nc} clients succeeded"
+    echo "outbreak: ${nc} clients succeeded"
 }
 
 main
