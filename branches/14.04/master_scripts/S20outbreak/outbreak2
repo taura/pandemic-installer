@@ -6,7 +6,7 @@ test_mode=1
 
 if [ ${test_mode} = 0 ] ; then
     # honban. /dev/sda -> /dev/sda
-    src_file=/dev/sda
+    src_file=/dev/sdb
     dst_file=/dev/sda
     client_prefix=10.0.3.
     client_last_octet_begin=100
