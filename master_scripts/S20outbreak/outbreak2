@@ -2,17 +2,26 @@
 
 this_dir=$(dirname $(realpath $0))
 
-src_file=/dev/sda
-dst_file=/dev/sda
-clients=10.0.3.[[100-199]]
-blk_sz=$((100 * 2**20)) # 100MB at a time
-rsh_method=ssh
+test_mode=1
 
-#src_file=$(pwd)/hoge
-#dst_file=hage
-#clients="x 3"
-#blk_sz=$((10))
-#rsh_method=sh
+if [ ${test_mode} = 0 ] ; then
+    # honban. /dev/sda -> /dev/sda
+    src_file=/dev/sda
+    dst_file=/dev/sda
+    clients=10.0.3.[[100-199]]
+    blk_sz=$((10 * 2**20)) # 100MB at a time
+    rsh_method=ssh
+else
+    # test mode:
+    # $(pwd)/test_src_file -> /tmp/tau/{0,1,2,...}/test_dst_file
+    # bring up 3 local processes
+    # transfer 10 bytes at a time
+    src_file=$(pwd)/test_src_file
+    dst_file=test_dst_file
+    clients="x 3"
+    blk_sz=$((10))
+    rsh_method=sh
+fi
 
 wallpaper_dir=.
 
@@ -80,12 +89,50 @@ check_continue() {
 
 copy_wallpapers() {
     master=$1
-    gxpc -G ${master} mw bcp ${this_dir}/change_wallpaper ${wallpaper_dir}
-    gxpc -G ${master} mw bcp ${this_dir}/start.png        ${wallpaper_dir}
-    gxpc -G ${master} mw bcp ${this_dir}/success.png      ${wallpaper_dir}
-    gxpc -G ${master} mw bcp ${this_dir}/failure.png      ${wallpaper_dir}
-    gxpc -G ${master} e  chmod +x ${wallpaper_dir}/change_wallpaper
+    gxpc mw bcp ${this_dir}/change_wallpaper ${wallpaper_dir}
+    gxpc mw bcp ${this_dir}/start.png        ${wallpaper_dir}
+    gxpc mw bcp ${this_dir}/success.png      ${wallpaper_dir}
+    gxpc mw bcp ${this_dir}/failure.png      ${wallpaper_dir}
+    gxpc e  chmod +x ${wallpaper_dir}/change_wallpaper
 }
+
+copy_block() {
+    src_file=$1
+    dst_file=$2
+    a=$3			# from offset
+    b=$4			# to offset
+    master=$5			# master name (ugly)
+    wallpaper_dir=$6		# wallpaper dir (ugly)
+
+    max_retries=4		# we try (max_retries + 1) times
+    for i in $(seq 0 ${max_tries}); do
+	if [ $i -gt 0 ] ; then
+	    echo "retry with reachable processes ($i/${max_tries})."
+	fi
+	n_reachables=$(gxpc --timeout 3.0 ping | wc -l)
+	gxpc smask
+	n_succeeded=$(gxpc --timeout 10.0 mw --master blkcpm "blkcpc --min_receivers 0 --creat --range ${a}:${b} ${src_file} ${dst_file}" | grep OK | wc -l)
+	if [ ${n_reachables} = ${n_succeeded}  ]; then
+	    echo "great, no processes failed. move on."
+	    break
+	else 
+	    if [ $((${n_reachables} - ${n_succeeded})) = 1 ]; then
+		# exactly one process failed. we let it out.
+		# otherwise, more than one processes failed,
+		# and it may be a cascaded failure due to network 
+		# disconnect. retry
+		echo "1 process failed. drop it."
+		gxpc smask
+	    else
+		echo "$((${n_reachables} - ${n_succeeded})) processed failed."
+	    fi
+	fi
+    done
+    # the set mask here has no effect if we terminate the loop
+    # with the first or the second clause; 
+    gxpc smask
+}
+
 
 main() {
     # get the size of the source file/disk
@@ -107,6 +154,7 @@ main() {
 
     # copy the wallpaper changer and images to clients
     copy_wallpapers ${master_name}
+    # change clients' wallpapers to the default one
     gxpc -G ${master_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/start.png
 
     echo "copying ${src_file} (${sz} bytes) to ${n_clients} clients"
@@ -120,20 +168,19 @@ main() {
     while [ ${a} -lt ${sz} ]; do
 	# judge if we should continue or bail out
 	if ! check_continue ${nm} ${nc} ${n_clients} ${a} ${sz} ${never_quit_above}; then
-	    gxpc -G ${master_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/failure.png
 	    return 1
 	fi
 	# real work. copy bytes a..b of the file
 	b=$((${a} + ${blk_sz}))
-	gxpc mw --master blkcpm "blkcpc --min_receivers 0 --creat --range ${a}:${b} ${src_file} ${dst_file} || [ \${GXP_GUPID} = ${master_name} ] || (${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/failure.png; exit 1)"
-	# remove clients that have failed
-	gxpc smask
+	# run blkcpc; if a client failed, it changes the wallpaper to failed
+	copy_block ${src_file} ${dst_file} ${a} ${b} ${master_name} ${wallpaper_dir}
 	# check if the master is alive
-	nm=$(gxpc e -g ${master_name} hostname | wc -l)
+	nm=$(gxpc -g ${master_name} e hostname | wc -l)
 	# check how many clients are alive
-	nc=$(gxpc e -G ${master_name} hostname | wc -l)
+	nc=$(gxpc -G ${master_name} e hostname | wc -l)
 	a=${b}
     done
+    # congrat. if you have gone thus far, you succeeded
     gxpc -G ${master_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/success.png
     echo "${nc} clients succeeded"
 }
