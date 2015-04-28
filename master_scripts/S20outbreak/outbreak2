@@ -106,7 +106,7 @@ main() {
     n_clients=$(gxpc -G ${master_name} e hostname | wc -l)
 
     copy_wallpapers
-    gxpc e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/start.png
+    gxpc -G ${master_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/start.png
 
     echo "copying ${src_file} (${sz} bytes) to ${n_clients} clients"
     # a = bytes we have copied so far
@@ -124,7 +124,7 @@ main() {
 	fi
 	# real work. copy bytes a..b of the file
 	b=$((${a} + ${blk_sz}))
-	gxpc mw --master blkcpm "blkcpc --min_receivers 0 --creat --range ${a}:${b} ${src_file} ${dst_file} || (${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/failure.png; exit 1)"
+	gxpc mw --master blkcpm "blkcpc --min_receivers 0 --creat --range ${a}:${b} ${src_file} ${dst_file} || [ \${GXP_GUPID} = ${master_name} ] || (${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/failure.png; exit 1)"
 	# remove clients that have failed
 	gxpc smask
 	# check if the master is alive
