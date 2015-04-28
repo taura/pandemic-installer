@@ -1,6 +1,6 @@
 address_prefix=10.0.3.
 last_octet_begin=100
-last_octet_end=102
+last_octet_end=199
 
 out_dir:=/tmp/$(USER)/$(shell date +%Y-%m-%d-%H-%M-%S-%N)/ping_result
 last_octets:=$(shell seq $(last_octet_begin) $(last_octet_end))
