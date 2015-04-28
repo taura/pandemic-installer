@@ -2,7 +2,7 @@
 
 this_dir=$(dirname $(realpath $0))
 
-test_mode=1
+test_mode=0
 
 if [ ${test_mode} = 0 ] ; then
     # honban. /dev/sda -> /dev/sda
