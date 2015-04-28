@@ -69,7 +69,8 @@ work_dir ?= /tmp/$(shell whoami)/custom_live
 # and its mount point
 
 usb_part ?= $(shell mount | awk '/fat/ && !/boot/ { print $$1 }')
-usb_dev  ?= $(shell mount | awk '$$1 == usb_part { print substr($$1, 1, length($$1)-1) }' usb_part=$(usb_part))
+# usb_dev  ?= $(shell mount | awk '$$1 == usb_part { print substr($$1, 1, length($$1)-1) }' usb_part=$(usb_part))
+usb_dev  ?= $(shell awk 'BEGIN { x="$(usb_part)"; sub("[0-9]", "", x); print x; }')
 usb_mnt  ?= $(shell mount | awk '$$1 == usb_part { print $$3 }' usb_part=$(usb_part))
 
 #usb_part ?= $(shell mount | awk '/fat/ { print $$1 }')
@@ -113,8 +114,8 @@ $(info mnt=$(mnt))
 $(info extract=$(extract))
 $(info custom_live_squashfs_root=$(custom_live_squashfs_root))
 $(info ******** check if the following seems correct ********)
-$(info usb_dev=$(usb_dev))
 $(info usb_part=$(usb_part))
+$(info usb_dev=$(usb_dev))
 $(info usb_mnt=$(usb_mnt))
 $(info ******************************************************)
 
@@ -263,7 +264,8 @@ $(usb_mnt)/syslinux.cfg : $(extract)/casper/filesystem.squashfs
 	[ "$(usb_mnt)" != "" ]
 	[ "$(usb_part)" != "" ]
 	@echo "checking partition $(usb_part) is a fat partition"
-	mount | grep $(usb_part) | grep fat
+#	mount | grep $(usb_part) | grep fat
+	mount | grep $(usb_dev) | grep fat
 	parted $(usb_dev) set 1 boot on
 	syslinux -i $(usb_part)
 	dd conv=notrunc bs=440 count=1 if=$(mbr_bin) of=$(usb_dev)
