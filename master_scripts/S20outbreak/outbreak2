@@ -40,7 +40,7 @@ get_file_size() {
 }
 
 get_pingable_clients() {
-    make -s -f ping.mk -j address_prefix=${client_prefix} last_octet_begin=${client_last_octet_begin} last_octet_end=${client_last_octed_end}
+    make -s -f ping.mk -j address_prefix=${client_prefix} last_octet_begin=${client_last_octet_begin} last_octet_end=${client_last_octet_end}
 }
 
 bring_up_clients() {
