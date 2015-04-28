@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.1 2015/04/27 14:19:32 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.2 2015/04/28 04:59:02 ttaauu Exp $
 # $Name:  $
 #
 
@@ -524,10 +524,12 @@ class ring_connector:
             self.n_procs = int(os.environ["GXP_NUM_EXECS"])
             self.exec_idx = int(os.environ["GXP_EXEC_IDX"])
             self.gxp_host = os.environ["GXP_HOSTNAME"]
+            self.gupid = os.environ["GXP_GUPID"]
         else:
             self.n_procs = 1
             self.exec_idx = 0
             self.gxp_host = ""
+            self.gupid = ""
         self.up_fd = self.open_src(src_spec)
         # the source failed to open. quit
         # if self.up_fd == -1: return -1
@@ -810,6 +812,7 @@ firewall between hosts for now.
                 (self.host, self.exec_idx, t1 - t0, t2 - t1,
                  end - begin,
                  (end - begin) / (1024.0 * 1024.0 * (t2 - t1)))))
+        Ws("OK %s %d %s\n" % (self.host, self.exec_idx, self.gupid))
         return 0
         
 def main():
@@ -819,6 +822,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: blkcpc,v $
+# Revision 1.2  2015/04/28 04:59:02  ttaauu
+# blkcpc now prints OK when succeeded
+#
 # Revision 1.1  2015/04/27 14:19:32  ttaauu
 # added blkcpc and blkcpm
 #
