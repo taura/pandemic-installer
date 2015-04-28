@@ -79,13 +79,13 @@ check_continue() {
 }
 
 copy_wallpapers() {
-    gxpc mw bcp ${this_dir}/change_wallpaper ${wallpaper_dir}
-    gxpc e chmod +x ${wallpaper_dir}/change_wallpaper
-    gxpc mw bcp ${this_dir}/start.png        ${wallpaper_dir}
-    gxpc mw bcp ${this_dir}/success.png      ${wallpaper_dir}
-    gxpc mw bcp ${this_dir}/failure.png      ${wallpaper_dir}
+    master=$1
+    gxpc -G ${master} mw bcp ${this_dir}/change_wallpaper ${wallpaper_dir}
+    gxpc -G ${master} mw bcp ${this_dir}/start.png        ${wallpaper_dir}
+    gxpc -G ${master} mw bcp ${this_dir}/success.png      ${wallpaper_dir}
+    gxpc -G ${master} mw bcp ${this_dir}/failure.png      ${wallpaper_dir}
+    gxpc -G ${master} e  chmod +x ${wallpaper_dir}/change_wallpaper
 }
-
 
 main() {
     # get the size of the source file/disk
@@ -105,7 +105,8 @@ main() {
     bring_up_clients
     n_clients=$(gxpc -G ${master_name} e hostname | wc -l)
 
-    copy_wallpapers
+    # copy the wallpaper changer and images to clients
+    copy_wallpapers ${master_name}
     gxpc -G ${master_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/start.png
 
     echo "copying ${src_file} (${sz} bytes) to ${n_clients} clients"
