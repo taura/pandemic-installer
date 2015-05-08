@@ -1,35 +1,196 @@
 #!/bin/bash
+#
+# outbreak2 : 
+# a (hopefully) more robust command to copy the source
+# disk to clients.
+#
+# usage:
+#   ./outbreak2
+#
+# before moving on, check if src_file below matches
+# the disk you want to copy and dst_file below
+# matches the disk you want to write it to.
+# they are usually hard drive of the machines, so
+# they are likely to be /dev/sda, but it's always
+# better to play cautiously.
+#
 
-this_dir=$(dirname $(realpath $0))
+cur_dir=$(pwd)
+this_dir=$(dirname ${cur_dir}/$0)
 
-test_mode=0
-
-if [ ${test_mode} = 0 ] ; then
-    # honban. /dev/sda -> /dev/sda
-    src_file=/dev/sdb
-    dst_file=/dev/sda
-    client_prefix=10.0.3.
-    client_last_octet_begin=100
-    client_last_octet_end=199
-    blk_sz=$((10 * 2**20)) # 100MB at a time
-    rsh_method=ssh
-else
-    # test mode:
-    # $(pwd)/test_src_file -> /tmp/tau/{0,1,2,...}/test_dst_file
-    # bring up 3 local processes
-    # transfer 10 bytes at a time
-    src_file=$(pwd)/test_src_file
-    dst_file=test_dst_file
-    clients="x 3"
-    blk_sz=$((10))
-    rsh_method=sh
-fi
-
+# the relative path to which wallpaper stuff will
+# be copied (clients move to their temporary directories)
 wallpaper_dir=.
 
-never_quit_above=${never_quit_above:-100}
+# if we have this many clients, never quit, no
+# matter how many fractions of the clients have 
+# failed (for example, if we set this 5, then
+# the system never quits as long as you have 5
+# clients).  use this value if we have a specific
+# requirements about the number of clients you 
+# make and do not care the success RATIO (e.g., 
+# you start from 30 clients and do not care even
+# if 25 failed and you get only 5).
+# by default, set to a ridiculously large value
+# so that it essentially has no effects.  whether
+# the system keeps going or bails out is determined
+# by the RELATIVE progress and failure RATE.
+# (see continue_check below)
+never_quit_above=100
 
-# get_file_size FILE prints the size of FILE
+#
+# resume from the previous run
+#
+resume=0
+
+#
+# verify after writes
+#
+verify=0
+
+#
+# data transferred per invocation of blkcpc
+#
+blk_sz=$((64 * 2 ** 20))
+
+#
+# timeout for transfering blk_sz bytes
+#
+timeout=0
+
+#
+# 1 if local test mode
+#
+local_test=1
+
+#
+# write-open mode
+#
+creat=1
+trunc=1
+
+#
+# verbosity
+#
+verbosity=1
+
+usage() {
+    echo "usage:"
+    echo "  $0 [options] [src] [dst]"
+    echo "options:"
+    echo "  --resume 0/1 [${resume}]"
+    echo "  --verify 0/1 [${verify}]"
+    echo "  --blk_sz N [${blk_sz}]"
+    echo "  --timeout S [${timeout}]"
+    echo "  --never_quit_above ${never_quit_above}"
+    echo "  --creat 0/1 [${creat}]"
+    echo "  --trunc 0/1 [${trunc}]"
+    echo "  --local_test 0/1 [${local_test}]"
+    echo "  --verbosity 0-3 [${verbosity}]"
+}
+
+eval set -- $(getopt -o "" --long resume:,verify:,blk_sz:,timeout:,never_quit_above:,create:,trunc:,local_test:,verbosity: -- "$@")
+
+parse_args() {
+    while true ; do 
+	case "$1" in
+	    --resume)
+		resume="$2"
+		shift 2
+		;;
+	    --verify)
+		verify="$2"
+		shift 2
+		;;
+	    --blk_sz)
+		blk_sz="$2"
+		shift 2
+		;;
+	    --timeout)
+		timeout="$2"
+		shift 2
+		;;
+	    --never_quit_above)
+		never_quit_above="$2"
+		shift 2
+		;;
+	    --creat)
+		creat="$2"
+		shift 2
+		;;
+	    --trunc)
+		trunc="$2"
+		shift 2
+		;;
+	    --local_test)
+		local_test="$2"
+		shift 2
+		;;
+	    --verbosity)
+		verbosity="$2"
+		shift 2
+		;;
+	    --)
+		shift 1
+		break;
+		;;
+	    *)
+		echo "??? wrong arg: $1"
+		return 1
+		;;
+	esac
+    done
+
+    if [ "${timeout}" = "0" ]; then
+	# 8MB + 10 sec margin
+	bw=$((8 * 1024 * 1024))
+	timeout=$((${blk_sz} / ${bw} + 10))
+    fi
+
+    if [ "${local_test}" = "0" ]; then
+	if [ "$1" = "" ]; then 
+	    src_file=/dev/sda
+	else
+	    src_file="$1"
+	fi
+	if [ "$1" = "" ]; then 
+	    dst_file="${src_file}"
+	else
+	    dst_file="$1"
+	fi
+    else
+	if [ "$1" = "" ]; then 
+	    src_file=$(pwd)/test_file_src
+	else
+	    src_file="$1"
+	fi
+	if [ "$1" = "" ]; then 
+	    dst_file=test_file_dst
+	else
+	    dst_file="$1"
+	fi
+    fi
+    return 0
+}
+
+print_args() {
+    echo resume="${resume}"
+    echo verify="${verify}"
+    echo blk_sz="${blk_sz}"
+    echo timeout="${timeout}"
+    echo never_quit_above="${never_quit_above}"
+    echo local_test="${local_test}"
+    echo src_file="${src_file}"
+    echo dst_file="${dst_file}"
+    echo this_dir="${this_dir}"
+}
+
+#
+# get_file_size FILE prints the size of FILE.
+# open the file and seek the end of the file.
+# I don't know if there is a convenient command
+# for it so I resort to python.
+
 get_file_size() {
     if [ -e $1 ]; then
 	python -c "import os,sys; print os.lseek(os.open(sys.argv[1], os.O_RDONLY), 0, os.SEEK_END)" $1
@@ -39,55 +200,118 @@ get_file_size() {
     fi
 }
 
+#
+# get clients that respond to ping, to know which
+# clients we try to explore. (it used to explore
+# all of them and get whichever clients we successfully
+# explore, but this is too crude and looks ugly).
+# we ping all clients in parallel, using Makefile
+#
+
 get_pingable_clients() {
-    make -s -f ping.mk -j address_prefix=${client_prefix} last_octet_begin=${client_last_octet_begin} last_octet_end=${client_last_octet_end}
+    # ping 10.0.3.100 - 10.0.3.199
+    client_prefix=10.0.3.
+    client_last_octet_begin=100
+    client_last_octet_end=199
+    ping_mk=${this_dir}/ping.mk
+    make -s -f ${ping_mk} -j address_prefix=${client_prefix} last_octet_begin=${client_last_octet_begin} last_octet_end=${client_last_octet_end}
 }
 
-bring_up_clients() {
-    if [ "${clients}" = "" ]; then
-	clients=$(get_pingable_clients)
+get_clients() {
+    if [ "${local_test}" = 0 ] ; then
+	get_pingable_clients
+    else 
+	echo "x 1"
     fi
-    echo "outbreak: clients: ${clients}"
+}
+
+#
+# explore clients. make a temporary directory under
+# /tmp/USER/N, where USER is a user name and N is
+# a unique index number (0,1,2, ...), and set their
+# current directory there.
+#
+# the purpose of this is mainly to make this tool
+# testable within a single node. by having them work
+# on a separate directory, we can make the destination
+# file unique for each client.
+#
+
+bring_up_clients_and_change_dir() {
+    if [ "${local_test}" = "0" ] ; then
+	rsh_method=ssh
+    else
+	rsh_method=sh
+    fi
+    clients=$(get_clients)
+    if [ "${verbosity}" -ge 1 ] ; then
+	echo "outbreak: clients: ${clients}"
+    fi
     gxpc use ${rsh_method} $(hostname) .
     gxpc explore --children_soft_limit 200 ${clients}
-    gxpc e mkdir -p "/tmp/tau/\${GXP_EXEC_IDX}"
-    gxpc cd "/tmp/tau/\${GXP_EXEC_IDX}"
+    gxpc e mkdir -p "/tmp/${USER}/outbreak/\${GXP_EXEC_IDX}"
+    gxpc cd         "/tmp/${USER}/outbreak/\${GXP_EXEC_IDX}"
+    if [ "${verbosity}" -ge 2 ] ; then
+	echo "outbreak: source and clients"
+	gxpc e echo "\${GXP_EXEC_IDX} \${GXP_GUPID} \$(pwd)"
+    fi
 }
 
-# check if we should continue despite that
-# some clients have failed
+# a function that determines where we should
+# keep going despite that some clients have failed,
+# or we should bail out as too few clients are
+# still alive. the conditions to keep going are
+# (1) the source node has not failed
+# (2) "enough" clients have not failed; here "enough"
+#     means large enough compared to the progress
+#     we have made so far.  for example, if a failure
+#     occurs pretty early, it is likely to be good
+#     to quit, as we do not lose too much by restarting
+#     it from the beginning. on the other hand, if
+#     we have copied 90% of the file, we probably should
+#     keep going, even if there are only 30% of clients
+#     left.
+
 check_continue() {
-    nm=$1			# number of masters (0 or 1)
+    ns=$1			# number of sources (0 or 1)
     nc=$2			# number of clients still alive
     n_clients=$3		# the original number of clients
     sz_done=$4 			# bytes that we have copied
     sz_total=$5			# bytes we need to copy in total
     never_quit_above=$6		# if the number of clients is this much,
                                 # we alywas contine
-    echo "outbreak: ${nm} master, ${nc}/${n_clients} clients, ${sz_done}/${sz_total} ($((${sz_done} * 100 / ${sz_total}))%) done"
+    if [ "${verbosity}" -ge 1 ]; then
+	echo "outbreak: ${ns} source, ${nc}/${n_clients} clients, ${sz_done}/${sz_total} ($((${sz_done} * 100 / ${sz_total}))% done)" 
+    fi
 
-    # if the master has gone, no way to proceed
-    if [ ${nm} -lt 1 ]; then
-	echo "outbreak: master failed. bail out." 1>&2
+    # if the source has gone, no way to proceed
+    if [ ${ns} -lt 1 ]; then
+	echo "outbreak: the source failed. bail out." 1>&2
 	return 1
     fi
 
+    # if the number of clients is larger than
+    # the preset threshold, keep going
     if [ ${nc} -ge ${never_quit_above} ]; then
 	return 0
     fi
 
-    # otherwise, we determine if we continue or not,
+    # otherwise, we determine if we continue or not
     # by the progress we have made and the number of
     # clients alive. the intuition is that, (a) if some
     # clients have died pretty early, we don't lose
     # too much by restarting it from scratch, possibly
     # after replacing failed clients with new ones.
-    # (b) if we have made much progress (say 50%), then
+    # (b) if we have made much progress (say 70%), then
     # we should be more patient.  to sum up (a) and (b),
     # we continue if :
+    # 
     #  live clients      bytes we have copied 
     # ---------------- + ---------------------- > 0.9
     #  total clients        bytes in total
+    #
+    # here is an awkward expression to do this with integers
+    # (better to do it in awk or something?)
     #
     if [ $((${sz_done} * ${n_clients} + ${nc} * ${sz_total})) -le $((${sz_total} * ${n_clients} * 9 / 10)) ] ; then
 	echo "outbreak: too few clients left. bail out." 1>&2
@@ -97,107 +321,183 @@ check_continue() {
     return 0			# OK, go ahead
 }
 
+# copy wall papers to everybody as a preparation.
+# cur_dir is the directory in which this script is
+# wallpaper_dir is the _relative_ path from their
+# current directories (i.e., /tmp/USER/outbreak/N)
 copy_wallpapers() {
-    master=$1
-    gxpc mw bcp ${this_dir}/change_wallpaper ${wallpaper_dir}
-    gxpc mw bcp ${this_dir}/start.png        ${wallpaper_dir}
-    gxpc mw bcp ${this_dir}/success.png      ${wallpaper_dir}
-    gxpc mw bcp ${this_dir}/failure.png      ${wallpaper_dir}
+    if [ "${verbosity}" -ge 1 ]; then
+	echo "outbreak: copy wallpaper stuff to clients with mw bcp"
+    fi
+    bcpv=$((${verbosity} - 1))
+    gxpc mw bcp --verbosity ${bcpv} ${cur_dir}/change_wallpaper ${wallpaper_dir}
+    gxpc mw bcp --verbosity ${bcpv} ${cur_dir}/start.png        ${wallpaper_dir}
+    gxpc mw bcp --verbosity ${bcpv} ${cur_dir}/success.png      ${wallpaper_dir}
+    gxpc mw bcp --verbosity ${bcpv} ${cur_dir}/failure.png      ${wallpaper_dir}
     gxpc e  chmod +x ${wallpaper_dir}/change_wallpaper
 }
+
+
+# disk_write_check() {
+#     dst_file=$1
+#     sz=$2
+#     gxpc --timeout 10.0 e python -c \"import os; wd = os.open(sys.argv[1], os.O_WRONLY); os.write(wd, sys.argv[2] * int(sys.argv[3])); os.close(wd); os._exit(0)\" ${dst_file} a ${sz}
+# }
+
+# 
+# a fault tolerant :-) function to copy a block from the
+# source to all clients. it uses blkcpm/blkcpc commands,
+# now part of gxp3, to fetch a block and copy it to clients.
+# we use time out (10 seconds. TODO: make it adjustable)
+# to guess a failure occurs. after the command finishes,
+# it examines how many clients have not succeeded. 
+# if there was a single failure, we drop it out (as it 
+# is likely to be an IO error. we may retry once or twice,
+# but we don't bother to do it now. doing so would require
+# keeping track of who failed and drop it out after the second
+# failure, as we do not want to waste too much
+# time on a client who keeps failing).  more importantly,
+# if there are multiple failures, it is likely to be a
+# cascaded failures due to a network problem (also, we do not
+# want to give up too many clients, no matter that was the 
+# cause).  in that case we issue ping commands (of gxp3) to 
+# make sure they are still gxp-reachable. drop out gxp-unreachable
+# clients and keep going.
+#
 
 copy_block() {
     src_file=$1
     dst_file=$2
     a=$3			# from offset
     b=$4			# to offset
-    master=$5			# master name (ugly)
-    wallpaper_dir=$6		# wallpaper dir (ugly)
+    source=$5			# source name (ugly to have it here)
+    wallpaper_dir=$6		# wallpaper dir (ugly to have it here)
 
-    max_retries=4		# we try (max_retries + 1) times
+    max_retries=1		# we try (max_retries + 1) times
     for i in $(seq 0 ${max_retries}); do
 	if [ $i -gt 0 ] ; then
-	    echo "outbreak: retry with reachable processes ($i/${max_retries})."
+	    echo "outbreak: retry with reachable processes (try $i, max tries = ${max_retries})."
 	fi
-	n_reachables=$(gxpc --timeout 3.0 ping | wc -l)
+	# ping with timeout 3 sec
+	n_ping_ok=$(gxpc --timeout 3.0 ping | wc -l)
+	if [ "${n_ping_ok}" = "0" ]; then break ; fi
+	# filter out unreachable guys
 	gxpc smask
-	n_succeeded=$(gxpc --timeout 10.0 mw --master blkcpm "blkcpc --min_receivers 0 --creat --range ${a}:${b} ${src_file} ${dst_file}" | grep OK | wc -l)
-	if [ ${n_reachables} = ${n_succeeded}  ]; then
+	if [ $i -gt 0 ] ; then
+	    n_disk_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --min_receivers 0 --creat ${creat} --trunc ${trunc} --transfer 0 --write 1 --range ${a}:${b} ${src_file} ${dst_file}" | grep DONE | wc -l)
+	    if [ "${n_disk_ok}" = "0" ]; then break ; fi
+	    gxpc smask
+	fi
+	# now copy a block, with timeout 10 sec.
+	# blkcpc prints "OK" when done and we count the 
+	# number of OK lines (TODO: should be made more robust)
+	if [ "${verbosity}" -ge 1 ]; then
+	    echo "outbreak: copy range ${a}:${b}"
+	fi
+	if [ "${verbosity}" -ge 2 ]; then
+	    echo outbreak: gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --min_receivers 0 --creat ${creat} --trunc ${trunc} --transfer 1 --write 1 --range ${a}:${b} ${src_file} ${dst_file}"
+	fi
+	n_copy_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --min_receivers 0 --creat ${creat} --trunc ${trunc} --transfer 1 --write 1 --range ${a}:${b} ${src_file} ${dst_file}" | grep DONE | wc -l)
+	if [ "${n_ping_ok}" = "${n_copy_ok}" ]; then
 	    # echo "great, no processes failed. move on."
 	    break
 	else 
-	    if [ $((${n_reachables} - ${n_succeeded})) = 1 ]; then
-		# exactly one process failed. we let it out.
-		# otherwise, more than one processes failed,
-		# and it may be a cascaded failure due to network 
-		# disconnect. retry
-		echo "outbreak: one process failed. drop it out."
-		gxpc smask
-	    else
-		echo "outbreak: $((${n_reachables} - ${n_succeeded})) processes failed."
-	    fi
+	    echo "outbreak: $((${n_ping_ok} - ${n_copy_ok})) processes failed."
 	fi
     done
     # the set mask here has no effect if we terminate the loop
     # with the first or the second clause; 
+    # in any case, we now have processes who have not failed
+    # so far.
     gxpc smask
 }
 
 
 main() {
+    if ! parse_args $@; then 
+	usage
+	return 1
+    fi
+    if [ "${verbosity}" -ge 3 ] ; then 
+	print_args
+    fi
+
     # get the size of the source file/disk
     sz=$(get_file_size ${src_file})
     if [ "${sz}" = "" ]; then return 1; fi
     echo "outbreak: copy ${src_file} -> ${dst_file}, size = ${sz}."
-    # clean up daemons
+
+    # clean up daemons left from the previous run
     gxpc quit
+
     # bring up the local daemon and get its name
-    master_name=$(gxpc e echo '${GXP_GUPID}')
-    echo "outbreak: master id = ${master_name}"
-    # get the number of masters; it SHOULD BE one,
-    # but we still check if the master has brought up
-    n_masters=$(gxpc e hostname | wc -l) #  0 or 1
-    # bring up clients and get the number of them
+    source_name=$(gxpc e echo '${GXP_GUPID}')
+    if [ "${verbosity}" -ge 1 ] ; then
+	echo "outbreak: source id = ${source_name}"
+    fi
+
+    # get the number of sources; it SHOULD BE one,
+    # but we still check if the source has brought up
+    n_sources=$(gxpc e hostname | wc -l) #  0 or 1
+
+    # bring up clients and get the number of them.
     # they also go to their working dir
-    bring_up_clients
-    n_clients=$(gxpc -G ${master_name} e hostname | wc -l)
-    echo "outbreak: reached ${n_clients} clients"
+    bring_up_clients_and_change_dir
+    
+    # count the number of clients (source excluded with -G)
+    n_clients=$(gxpc -G ${source_name} e hostname | wc -l)
+    if [ "${verbosity}" -ge 1 ] ; then
+	echo "outbreak: reached ${n_clients} clients"
+    fi
 
-    # copy the wallpaper changer and images to clients
-    copy_wallpapers ${master_name}
+    # copy the wallpaper changer and stuff to clients
+    copy_wallpapers
+
     # change clients' wallpapers to the default one
-    gxpc -G ${master_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/start.png
+    if [ "${verbosity}" -ge 1 ] ; then
+	echo "outbreak: reset client wallpapers to start"
+	gxpc -G ${source_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/start.png
+    fi
 
+    # keep track of time (+%s prints seconds since epoch)
     start_time=$(date +%s)
+
+    # now the real work begins!!
 
     # a = bytes we have copied so far
     a=0
-    # the number of masters that haven't failed (must be one)
-    nm=${n_masters}
+    # the number of sources that haven't failed (must be one)
+    ns=${n_sources}
     # the number of clients that haven't failed
     nc=${n_clients}
     # the main copying loop
     while [ ${a} -lt ${sz} ]; do
+	# show current time and seconds since start
 	now=$(date +%s)
 	sec_since_start=$((${now} - ${start_time}))
 	echo "outbreak: $(date +%H:%M:%S) (${sec_since_start} sec since start)"
 	# judge if we should continue or bail out
-	if ! check_continue ${nm} ${nc} ${n_clients} ${a} ${sz} ${never_quit_above}; then
-	    return 1
+	if ! check_continue ${ns} ${nc} ${n_clients} ${a} ${sz} ${never_quit_above}; then
+	    return 1		# NG
 	fi
 	# real work. copy bytes a..b of the file
 	b=$((${a} + ${blk_sz}))
-	# run blkcpc; if a client failed, it changes the wallpaper to failed
-	copy_block ${src_file} ${dst_file} ${a} ${b} ${master_name} ${wallpaper_dir}
-	# check if the master is alive
-	nm=$(gxpc -g ${master_name} e hostname | wc -l)
+	copy_block ${src_file} ${dst_file} ${a} ${b} ${source_name} ${wallpaper_dir}
+	# check if the source is alive 
+	# (-g ${source_name} means "send only to the source)
+	ns=$(gxpc -g ${source_name} e hostname | wc -l)
 	# check how many clients are alive
-	nc=$(gxpc -G ${master_name} e hostname | wc -l)
+	# (-G ${source_name} means "do not send to the source)
+	nc=$(gxpc -G ${source_name} e hostname | wc -l)
 	a=${b}
     done
-    # congrat. if you have gone thus far, you succeeded
-    gxpc -G ${master_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/success.png
+    # congrat. if you have gone thus far, you succeeded.
+    # change wallpaper
+    if [ "${verbosity}" -ge 1 ]; then
+	echo "outbreak: set wallpaper to success"
+	gxpc -G ${source_name} e ${wallpaper_dir}/change_wallpaper ${wallpaper_dir}/success.png
+    fi
     echo "outbreak: ${nc} clients succeeded"
 }
 
-main
+main $@
