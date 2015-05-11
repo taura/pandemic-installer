@@ -90,8 +90,8 @@ timeout=0
 # clients (they move to their own temporary directories
 # so it's safe for all of them to copy into test_file_dst).
 #
-mode=local
-#mode=production
+#mode=local
+mode=production
 
 #
 # number of clients when mode=local
@@ -142,6 +142,7 @@ long_help=0
 usage() {
     echo "USAGE:"
     echo "  $0 [options] [src] [dst]"
+    echo ""
     echo "OPTIONS:"
     echo "  -h,--help"
     echo "  --long_help"
@@ -149,10 +150,10 @@ usage() {
     echo "  --verify"
     echo "  --no_wallpaper"
     echo "  --mode local/production [${mode}]"
-    echo "  --verbosity 0-3 [${verbosity}]"
+    echo "  --verbosity 0-4 [${verbosity}]"
     echo "  --blk_sz N [${blk_sz}]"
     echo "  --timeout S [${timeout}]"
-    echo "  --never_quit_above ${never_quit_above}"
+    echo "  --never_quit_above [${never_quit_above}]"
     echo "  --read_fault p [${read_fault}]"
     echo "  --send_fault p [${send_fault}]"
     echo "  --recv_fault p [${recv_fault}]"
@@ -167,9 +168,365 @@ usage() {
 #
 long_usage() {
     cat <<EOF
+
 DESCRIPTION:
-  outbreak copies SRC on the local machine into DST on
-client machines.
+  outbreak2 copies SRC on the local machine
+into DST on client machines.  See EXAMPLES
+section for some examples.  Without any
+option, it will copy /dev/sda of the local
+machine into /dev/sda of all client machines.
+Client machines are listed in ping.mk in the
+same directory of outbreak2 (${this_dir}).
+By default, it is all machines having IP
+addresses 10.0.3.100-10.0.3.199.
+
+BASIC BEHAVIOR:
+
+Since this command is primarily intended to
+copy an entire drive typically hundreds of
+giga bytes large, it has provisions for
+gracefully handling faults.  Gracefully
+handling faults in this context means two
+things.
+
+(i) When a client experiences a fault, other
+healthy clients can continue; outbreak2
+actually judges if it should continue with
+remaining clients or stop the entire process
+(bail out) with the following criterion;
+basically, it bails out when so many clients
+left so early.  The basic idea behind this is
+when it happens, restarting from the
+beginning won't lose too much work, so giving
+the user a chance to add some more clients or
+fix any problem that makes faults so common
+will give a better harvest rate.  More
+specifically, it continues when the following
+is satisfied.
+
+   fraction of remaining clients
+ + fraction of already copied data > 0.9
+
+When some errors occur, you can hopefully
+just sit down and keep watching until it
+finishes with the remaining clients or bails
+out.  If it finishes, you'll get a fair
+number of clients.  If it bails out and you
+get no successful clients, it should be
+because when so many clients have failed
+pretty early, so restarting the process from
+the beginning won't lose too much time.  You
+also do not want to keep waiting for the
+remaining clients to finish when the maximum
+harvest you can expect is already low.  It
+will also be likely that you want to examine
+why so many faults happened and change the
+set of clients or fix the network
+connectivity anyway.
+
+(ii) When the entire process bails out, you
+can still resume from the point where the
+first fault happens, with --resume option.
+To this end, outbreak2 is writing the
+progress to a checkpoint file (ckpt.db) in
+the current directory.  When --resume option
+is given, it reads the checkpoint file to
+determine where it should start again.
+
+During the operation, a window showing the
+status will pop up on the desktop of each
+client.  It shows hostname, IP address,
+working directory, a globally unique ID (that
+can be matched with text messages on the
+local terminal), and the status (started,
+succeeded, failed, bailed out).  As soon as a
+client drops out due to a fault, the window
+indicating the failure will show up on the
+client.  
+
+On the local terminal, various progress and
+event messages will be shown.  They include:
+
+ (a) How much progress has been made.  In
+ general, all clients will progress in the
+ same pace.  It repeats copying a block of
+ the size defined by --blk_sz option to all
+ the clients (default: 64MB).  Unless all
+ clients are done with the block, no clients
+ will go ahead.  So it keeps track of and
+ shows the progress of all the clients with a
+ single global value.
+
+ (b) Clients that have failed, along with
+ the error message they encounter, as long
+ as they can deliver it back to the local 
+ machine.
+ 
+
+DISK COPY VS. FILE COPY:
+Although its primary purpose is to copy an
+entire disk, which is a special (device)
+file, it can also be used to copy a regular
+file.  You may simply give regular file names
+as the source and destination files.  e.g.,
+  ./outbreak2 big_file_src big_file_dst
+or
+  ./outbreak2 big_file 
+the latter of which is equivalent to 
+  ./outbreak2 big_file big_file 
+
+This feature is mainly used for debugging and
+testing this program (you don't want to copy
+/dev/sda each time you test it, do you?).
+
+Care must be taken how to interpret the
+relative path name given as the destination
+file.  A unique directory is created for each
+client and it is used for the base path of
+relative path names; thus, the relative
+destination path becomes unique EVEN IF SOME
+CLIENTS RUN on the same machine.
+
+LOCAL TEST MODE: 
+To facilitate debugging and testing, it has a
+--mode=local option.  When --mode=local is
+given, all clients run on the same machine.
+See the description of --mode option below.
+
+BEHAVIOR OF --RESUME OPTION:
+
+All clients still participating basically
+make an equal progress.  A single block of
+the size specified by --blk_sz is sent and
+written into all clients before any client
+goes ahead.  Whenever a single block has been
+written to all clients that are active at
+that time, outbreak2 will record the fact to
+a checkpoint file (ckpt.db), which is a
+simple human-readable text file.  Each record
+of the file looks like:
+
+  addrs|path|mtime|size
+
+ADDRS column is the list of IP addresses of
+the client, as obtained by hostname -I
+command (there may be multiple IP addresses).
+PATH is the canonical absolute path name of
+the destination file, as obtained by
+os.path.realpath method of python module.
+MTIME is the modification time of the
+destination file as obtained by
+os.stat(..).st_mtime.  SIZE is the number of
+bytes that have been successfully written.
+
+Whenever a single block of the size specified
+by --blk_sz option has been successfully
+written to all clients, outbreak2 will update
+the corresponding records of the checkpoint
+file.  In this process, the pair (addrs,
+path) is used as a key.  In effect, it will
+update MTIME and SIZE of still running
+clients.  The record of a clients that
+participated but has already dropped out due
+to a fault won't be updated from the point
+when it failed.  So, even if all
+participating clients progress in an equal
+pace, we may end up with different values in
+the SIZE field among clients.
+
+When outbreak2 is executed with --resume
+option, it consults the checkpoint file and
+matches clients that participate this time
+with records in the checkpoint file.  For
+each client, if the matching entry, whose
+definition is given below, is found, it
+assumes the first SIZE bytes has been written
+to that client so can be skipped at this
+time.  It may still be written if there are
+other clients behind it (i.e., have smaller
+SIZE values). It never happens that a single
+byte range is written in some clients but not
+in others unless there is a fault.
+
+Note that we cannot make any assumption about
+the identities and the states of the
+participating machines across different
+invocations of outbreak2 command.  It may be
+the case the clients are partly replaced
+between two successive invocations.  In fact,
+it is quite common that physically different
+machines are assigned the same IP address at
+different invocations; physically different
+disks are assigned the same path name (e.g.,
+/dev/sda) at different invocations;
+physically the same disk may be modified
+between invocations.  To safely detect if a
+client participating in the current
+invocation of outbreak2 has a matching record
+in the checkpoint file, it uses the triple
+(addrs, path, mtime) as the key.  In other
+words, if a client participating this time
+has an IP address A, is going to write to a
+file of absolute path P, and P's mtime is T,
+it checks if a record satisfying ADDRS=A,
+PATH=P, and MTIME=T exist in the checkpoint
+file, and if so, it reads the SIZE column of
+that record and assumes the first SIZE bytes
+of the current client have already been
+written and can be skipped.
+
+OPTIONS:
+
+  --resume : resumes from the point a failure
+    occurred in the last invocation, rather than
+    starting from the beginning of the file. See 
+    BEHAVIOR OF --RESUME OPTION below for details.
+
+  --verify : (not implemented yet) will
+    verify the specified source file on the
+    local machine is identical to the
+    destination files on the client machines.
+
+  --no_wallpaper : does not show status windows on 
+    clients.  
+
+  --mode local/production : --mode local can be
+    used to locally test this program. when --mode
+    local is given, it uses local processes as 
+    clients.  The number of clients can be specified
+    by --n_local_clients.  When this option is used,
+    you cannot omit the source file name.  Also, 
+    you probably do not want to use an absolute path 
+    name for destination file name, as it will refer
+    to the same file among all clients.  Take advantage
+    of the fact that relative path names are relative
+    to a directory unique to each client.  So, for 
+    example, 
+      ./outbreak2 --mode local foo bar
+    is safe (bar becomes unique to each client).
+
+  --verbosity V : controls the verbosity level. 
+
+  --blk_sz N : determines the unit of work.
+
+    outbreak2 repeatedly invokes blkcpc
+    command (of GXP) to copy the file.  This
+    option specifies how much data will be
+    transferred on each invocation of blkcpc
+    command.  As each invocation of blkcpc
+    will open, seek, read/write, and close
+    the source/destination files, giving too
+    small a blk_sz value will result in large
+    overhead.  On the other hand, outbreak2
+    will show the progress and checkpoint it,
+    you do not want to make it too large.
+
+  --timeout S : specifies the timeout value
+    of each blkcpc command.  The default
+    value (0) means it is determined from the
+    blk_sz value.
+
+  --never_quit_above N : specifies the number
+    of clients above which outbreak2 will
+    never bail out.  Normally, outbreak2 will
+    stop the entire process when it judges
+    so many clients have failed so early that
+    restarting the copy from scratch (perhaps
+    with new machines or after fixing a problem
+    that makes faults so common) won't lose too much
+    time.  By specifying this value to a small
+    value, you can guarantee outbreak2 won't give
+    up as long as that many clients still remain.
+
+  --read_fault p :
+  --send_fault p : 
+  --recv_fault p :
+  --write_fault p :
+  --close_fault p :
+  --closesocket_fault p :
+
+    specify the fault injection probability
+    of the respective operation in blkcpc
+    command.  --read_fault 1.0e-2 means any
+    read system call will fail with
+    probability 1.0e-2.
+
+  --block_on_fault 0/1 : 1 means upon an
+    injected fault, the blkcpc process will
+    indefinitely block until outbreak2 killed
+    them.
+
+
+FILES:
+
+ckpt.db : outbreak2 will create this file to
+   record how much data were successfully
+   copied to each client.  It is a
+   |-separated text file containing IP
+   addresses, absolute path to the
+   destination file, the modification time,
+   and the offset to which the copy
+   succeeded.  when --resume option is given,
+   outbreak2 consults this file to skip data
+   that can be surely omitted.
+
+/tmp/USER/outbreak/N : a working directory of
+   client N, so that each client has a unique
+   working directory even if some are running
+   on the same machine.  Remember that a
+   relative pathname given as the destination
+   file is relative to this directory.
+
+status.svg : the status file drawn on the
+   desktop of each client.  It is created in
+   one of the following directories (whichever
+   exists).
+   /home/USER/Desktop
+   /home/USER/デスクトップ
+   /tmp/USER/outbreak/N
+
+status.pid : a file containing the pid of the
+   process showing the status.svg.  The file
+   is used to kill it when the status of the
+   client changes to the process should be
+   gone.  It is created in the same directory
+   as status.svg
+
+EXAMPLES:
+(1) ./outbreak2 
+
+copies /dev/sda of the local machine into
+/dev/sda of all ping-reachable machines
+having IP addresses 10.0.3.100-10.0.3.199.
+Make sure the drive you want to copy is
+/dev/sda.  The IP address range is hardwired
+in ping.mk in this directory.  Modify ping.mk
+when you want to change this behavior.
+
+(2) ./outbreak2 /dev/sdb
+
+ditto, but copies /dev/sdb instead of /dev/sda.
+Use this when you know the drive you want to
+copy is /dev/sdb.
+
+(3) ./outbreak2 /dev/sdb /dev/sda
+
+copies the /dev/sdb of the local machine to
+/dev/sda of client machines.
+
+(4) ./outbreak2 --resume 
+
+resumes copying from the point where the
+first fault occurred in the last run.  See
+BEHAVIOR OF --RESUME OPTION above for
+details.
+
+(5) ./outbreak2 --mode local foo bar
+
+copies FOO under the current directory to
+/tmp/USER/outbreak/{0,1,2}/bar.  Non-existing
+directories are created.
+
 EOF
 }
 
@@ -369,12 +726,8 @@ get_file_size() {
 #
 
 get_pingable_clients() {
-    # ping 10.0.3.100 - 10.0.3.199
-    client_prefix=10.0.3.
-    client_last_octet_begin=100
-    client_last_octet_end=199
     ping_mk=${this_dir}/ping.mk
-    make -s -f ${ping_mk} -j address_prefix=${client_prefix} last_octet_begin=${client_last_octet_begin} last_octet_end=${client_last_octet_end}
+    make -s -f ${ping_mk} -j 
 }
 
 #
