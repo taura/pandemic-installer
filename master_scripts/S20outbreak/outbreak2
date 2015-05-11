@@ -81,6 +81,12 @@ timeout=0
 mode=production
 
 #
+# when set by --disk_check option, do not transfer
+# data and write junk data to disks
+#
+disk_check=0
+
+#
 # number of clients when mode=local
 #
 n_local_clients=4
@@ -539,7 +545,7 @@ EOF
 # will set the command line of this process that can be
 # easily parsed.
 #
-eval set -- $(getopt -o "hnf" --long help,long_help,force,dryrun,resume,verify,no_wallpaper,blk_sz:,timeout:,never_quit_above:,mode:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
+eval set -- $(getopt -o "hnf" --long help,long_help,force,dryrun,resume,verify,disk_check,no_wallpaper,blk_sz:,timeout:,never_quit_above:,mode:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
 
 parse_args() {
     # the command line has been canonicalized, so we simply
@@ -580,6 +586,10 @@ parse_args() {
 		;;
 	    --verify)
 		verify=1
+		shift 1
+		;;
+	    --disk_check)
+		disk_check=1
 		shift 1
 		;;
 	    --no_wallpaper)
@@ -981,7 +991,13 @@ copy_block() {
 	if [ "${verbosity}" -ge 2 ]; then
 	    set -x
 	fi
-	n_copy_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --creat ${creat} --trunc ${trunc} --read_fault ${read_fault} --send_fault ${send_fault} --recv_fault ${recv_fault} --write_fault ${write_fault} --close_fault ${close_fault} --closesocket_fault ${closesocket_fault} --block_on_fault ${block_on_fault} --min_receivers 0 --write 1 --transfer 1 --range ${a}:${b} ${src_file} ${dst_file}" | grep DONE | wc -l)
+
+	if [ "${disk_check}" = 1 ] ; then
+	    trans=0
+	else
+	    trans=1
+	fi
+	n_copy_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --creat ${creat} --trunc ${trunc} --read_fault ${read_fault} --send_fault ${send_fault} --recv_fault ${recv_fault} --write_fault ${write_fault} --close_fault ${close_fault} --closesocket_fault ${closesocket_fault} --block_on_fault ${block_on_fault} --min_receivers 0 --write 1 --transfer ${trans} --range ${a}:${b} ${src_file} ${dst_file}" | grep DONE | wc -l)
 	set +x
 
 	n_failed=$((${n_ping_ok} - ${n_copy_ok} - 1))
