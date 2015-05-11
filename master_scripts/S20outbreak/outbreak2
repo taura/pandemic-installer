@@ -14,11 +14,15 @@
 # for more details.
 #
 # make sure we do this at the beginning
+# $_ is the path name with which this program
+# is invoked. 
 this_file=$_
 cur_dir=$(pwd)
 if [ "${this_file:0:1}" = "/" ]; then
+    # this_file is an absolute path name
     this_file_abs=${this_file}
 else
+    # this_file is a relative path name
     this_file_abs=${cur_dir}/${this_file}
 fi
 this_dir=$(dirname ${this_file_abs})
@@ -50,23 +54,6 @@ resume=0
 # verify after writes (not implemented yet)
 #
 verify=0
-
-#
-# how to write-open the destination file.
-# creat=1 means it creates the destination file if it
-#         does not exist.
-# trunc=1 means it truncates the file before writing.
-# 
-# on the other hand, if creat=0, the file must exist.
-# if trunc=0, portion of the file that are not written
-# remain untouched.
-#
-# when this command is used to copy the entire hard disk
-# (i.e., destination file is /dev/sda), creat=0 and trunc=0
-# are what you want; you never want to create the device
-# file.
-# creat=1
-# trunc=1
 
 #
 # this command repeats invoking blkcpc to copy a 
@@ -104,7 +91,9 @@ n_local_clients=4
 verbosity=1
 
 #
-# wallpaper
+# wallpaper is a misnomer. if set to 1, 
+# a window pops up whosing the status 
+# of each client
 #
 wallpaper=1
 
@@ -129,6 +118,13 @@ write_fault=0.0
 close_fault=0.0
 closesocket_fault=0.0
 block_on_fault=1
+
+#
+# run=0 for dryrun
+# ask=1 to ask the user if it should go ahead
+#
+run=1
+ask=1
 
 #
 # help
@@ -543,7 +539,7 @@ EOF
 # will set the command line of this process that can be
 # easily parsed.
 #
-eval set -- $(getopt -o "h" --long help,long_help,resume,verify,no_wallpaper,blk_sz:,timeout:,never_quit_above:,mode:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
+eval set -- $(getopt -o "hnf" --long help,long_help,force,dryrun,resume,verify,no_wallpaper,blk_sz:,timeout:,never_quit_above:,mode:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
 
 parse_args() {
     # the command line has been canonicalized, so we simply
@@ -560,6 +556,14 @@ parse_args() {
 		;;
 	    --long_help)
 		long_help=1
+		shift 1
+		;;
+	    --dryrun)
+		run=0
+		shift 1
+		;;
+	    --force)
+		ask=0
 		shift 1
 		;;
 	    --resume)
@@ -760,7 +764,7 @@ bring_up_clients_and_change_dir() {
 	rsh_method=sh
     fi
     clients="$(get_clients)"
-    if [ "${verbosity}" -ge 1 ] ; then
+    if [ "${verbosity}" -ge 2 ] ; then
 	echo "outbreak: clients: ${clients}"
     fi
     gxpc use ${rsh_method} $(hostname) .
@@ -772,9 +776,10 @@ bring_up_clients_and_change_dir() {
     gxpc -G ${src_gupid} cd         "/tmp/${USER}/outbreak/\${GXP_EXEC_IDX}"
     if [ "${verbosity}" -ge 1 ] ; then
 	echo "outbreak: source:"
-	gxpc -g ${src_gupid} e echo "  \${GXP_GUPID} \$(pwd)"
-	echo "outbreak: clients:"
-	gxpc -G ${src_gupid} e echo "  \${GXP_GUPID} \$(pwd)"
+	gxpc -g ${src_gupid} e echo "\"  \"\${GXP_GUPID} \$(pwd) ${src_file}"
+	n_clients=$(gxpc -G ${src_gupid} ping | wc -l)
+	echo "outbreak: ${n_clients} clients:"
+	gxpc -G ${src_gupid} e echo "\"  \"\${GXP_GUPID} \$(pwd) ${dst_file}"
     fi
 }
 
@@ -785,22 +790,18 @@ bring_up_clients_and_change_dir() {
 #
 
 get_offset_from_checkpoint() {
+    # sorry for the ugly command ...
+    # for each client, obtain the |-separated triple 
+    #    ADDRS|PATH|MTIME
+    # and feed them to checkpoint.py program.
+    # checkpoint.py min_offset ckpt.db prints a single
+    # number indicating the offset to start copying 
+    # from. For each input triple in ckpt.db, it looks
+    # it up in the database.  If any triple is not found,
+    # it immediately prints 0 and exits.  If all triples
+    # are found, it prints the minimum of the values 
+    # found in SIZE column of the database.
     gxpc -G ${src_gupid} e "echo \$(python -c 'import os,sys,stat; ip=sys.argv[1]; f=sys.argv[2]; print \"%s|%s|%f\" % (ip, os.path.realpath(f), os.stat(f).st_mtime)' \"\$(hostname -I)\" ${dst_file})" | ${this_dir}/checkpoint.py min_offset ${ckpt_db}
-}
-
-get_offset_from_checkpoint_x() {
-    # number of reachable clients
-    n_clients=$(gxpc -G ${src_gupid} ping | wc -l)
-    # number of clients that have ckpt.sz file
-    n_ckpts=$(gxpc -G ${src_gupid} e ls -1 ${ckpt_file} 2> /dev/null | wc -l)
-    # if there is anybody who does not have it, we must start from the
-    # beginning
-    if [ "${n_clients}" != "${n_ckpts}" ]; then
-	echo "0"
-    else
-	# otherwise find the minimum value in all ckpt.sz files
-	gxpc -G ${src_gupid} e awk 'BEGIN {x=0} { if (x == 0 || x > $1) x=$1 } END { print x }' ${ckpt_file}
-    fi
 }
 
 #
@@ -812,12 +813,12 @@ get_offset_from_checkpoint_x() {
 set_start_offset() {
     if [ "${resume}" = "0" ] ; then
 	if [ "${verbosity}" -ge 1 ] ; then
-	    echo "outbreak: ignore any checkpoint file"
+	    echo "outbreak: --resume not given. ignore any checkpoint file"
 	fi
 	start_offset=0
     else
 	if [ "${verbosity}" -ge 1 ] ; then
-	    echo "outbreak: use checkpoint file ${ckpt_db}"
+	    echo "outbreak: --resume is given,. use checkpoint file ${ckpt_db}"
 	fi
 	if [ "${verbosity}" -ge 2 ] ; then
 	    cat ${ckpt_db}
@@ -1025,15 +1026,17 @@ main() {
     # get the size of the source file/disk
     sz=$(get_file_size ${src_file})
     if [ "${sz}" = "" ]; then return 1; fi
-    echo "outbreak: copy ${src_file} -> ${dst_file}, size = ${sz}."
+    if [ "${verbosity}" -ge 2 ]; then
+	echo "outbreak: src=${src_file}, dst=${dst_file}, size=${sz}."
+    fi
 
     # clean up daemons left from the previous run
     gxpc quit
 
     # bring up the local daemon and get its name
     src_gupid=$(gxpc e echo '${GXP_GUPID}')
-    if [ "${verbosity}" -ge 1 ] ; then
-	echo "outbreak: source id = ${src_gupid}"
+    if [ "${verbosity}" -ge 2 ] ; then
+	echo "outbreak: source gupid = ${src_gupid}"
     fi
 
     # get the number of sources; it SHOULD BE one,
@@ -1046,8 +1049,27 @@ main() {
     
     # count the number of clients (source excluded with -G)
     n_clients=$(gxpc -G ${src_gupid} e hostname | wc -l)
+
+    # if --resume is given, check checkpoint files
+    # to determine the starting offset.
+    # variable start_offset is set
+    set_start_offset
     if [ "${verbosity}" -ge 1 ] ; then
-	echo "outbreak: reached ${n_clients} clients"
+	echo "outbreak: start from offset ${start_offset}"
+    fi
+
+    # dry run, if -n or --dryrun are given
+    if [ "${run}" = 0 ] ; then exit 0; fi
+
+    # ask if we should go ahead, unless -f or --force are given
+    if [ "${ask}" = 1 ] ; then
+	echo "should I go ahead [y/N]?"
+	reply=n
+	read reply
+	if [ "${reply}" != "y" ] ; then
+	    echo "that's fine, see you later"
+	    exit 0
+	fi
     fi
 
     # copy the wallpaper changer and stuff to clients
@@ -1063,14 +1085,6 @@ main() {
 	    echo "outbreak: reset client wallpapers to start"
 	fi
 	gxpc -G ${src_gupid} e ./cs start
-    fi
-
-    # if --resume is given, check checkpoint files
-    # to determine the starting offset.
-    # variable start_offset is set
-    set_start_offset
-    if [ "${verbosity}" -ge 1 ] ; then
-	echo "outbreak: start from offset ${start_offset}"
     fi
 
     # keep track of time (+%s prints seconds since epoch)
