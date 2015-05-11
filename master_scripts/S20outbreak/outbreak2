@@ -924,7 +924,7 @@ copy_stuff() {
     if [ "${n_failed}" = 0 ]; then
 	return 0
     else
-	echo "failed to copy to some clients"
+	echo "failed to copy to some clients n_clients=${n_clients}, n_copy_ok=${n_copy_ok}"
 	return 1
     fi
 }
