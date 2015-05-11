@@ -776,7 +776,7 @@ bring_up_clients_and_change_dir() {
 	echo "outbreak: clients: ${clients}"
     fi
     gxpc use ${rsh_method} $(hostname) .
-    gxpc explore --children_soft_limit 200 ${clients}
+    gxpc explore --timeout 15.0 --children_soft_limit 200 ${clients}
 
     gxpc -G ${src_gupid} export "OUTBREAK_CLIENT_IDX=\${GXP_EXEC_IDX}"
 
