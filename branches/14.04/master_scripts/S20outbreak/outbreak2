@@ -1081,7 +1081,9 @@ main() {
 
     # copy the wallpaper changer and stuff to clients
     if [ "${wallpaper}" = 1 ]; then
-	if ! copy_stuff ; then
+	if copy_stuff ; then
+	    gxpc -G ${src_gupid} e sudo -u ubuntu sh -c '"DISPLAY=:0 xhost +"'
+	else
 	    return 1
 	fi
     fi
