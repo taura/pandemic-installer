@@ -1071,7 +1071,7 @@ main() {
 
     # ask if we should go ahead, unless -f or --force are given
     if [ "${ask}" = 1 ] ; then
-	echo "should I go ahead [y/N]?"
+	echo "should I go ahead [y/N]?" 1>&2
 	reply=n
 	read reply
 	if [ "${reply}" != "y" ] ; then
