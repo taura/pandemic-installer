@@ -558,8 +558,16 @@ parse_args() {
 		long_help=1
 		shift 1
 		;;
+	    -n)
+		run=0
+		shift 1
+		;;
 	    --dryrun)
 		run=0
+		shift 1
+		;;
+	    -f)
+		ask=0
 		shift 1
 		;;
 	    --force)
