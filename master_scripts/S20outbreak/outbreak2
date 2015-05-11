@@ -920,7 +920,7 @@ copy_stuff() {
     if [ "${verbosity}" -ge 2 ]; then
 	echo "copied to ${n_copy_ok} out of ${n_clients} clients"
     fi
-    n_failed=$((${n_clients} - ${n_copy_ok} - 1))
+    n_failed=$((${n_clients} - ${n_copy_ok}))
     if [ "${n_failed}" = 0 ]; then
 	return 0
     else
