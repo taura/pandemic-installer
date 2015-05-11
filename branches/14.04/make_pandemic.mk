@@ -1,9 +1,5 @@
-# 
-# mess around root check, device check, vmdk creation
-#
-
 # ------------------------------------
-# make_custom_live.mk
+# make_pandemic.mk
 #  creates a custom live CD from the default CD
 # ------------------------------------
 # Need:
@@ -300,3 +296,9 @@ clean :
 make_virtualbox_bootable_usb : $(usb_vmdk)
 $(usb_vmdk) : 
 	VBoxManage internalcommands createrawvmdk -filename $(usb_vmdk) -rawdisk $(usb_dev)
+
+
+# TODO:
+# mess around root check, device check, vmdk creation
+#
+

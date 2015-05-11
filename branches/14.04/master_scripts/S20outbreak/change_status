@@ -24,6 +24,9 @@ dir: ${dir}
 <text x="10" y="$((${fs} * 5))" font-size="${fs}" fill="${fg}">
 status: ${icon}
 </text>
+<text x="10" y="$((${fs} * 6))" font-size="${fs}" fill="${fg}">
+since: ${since}
+</text>
 </svg>
 EOF
 }
@@ -67,6 +70,7 @@ gen_svg() {
     addrs="$(hostname -I)"
     gupid="${GXP_GUPID}"
     dir="$(pwd)"
+    since="$(date)"
 
     gen_svg_aux
 }
