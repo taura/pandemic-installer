@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.5 2015/05/11 04:06:42 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.6 2015/05/11 13:52:47 ttaauu Exp $
 # $Name:  $
 #
 
@@ -219,7 +219,7 @@ class ring_connector:
         self.host  : hostname
         self.port  : port number of the socket
         """
-        if self.up_fd >= 0 or self.down_fd >= 0:
+        if 1 or self.up_fd >= 0 or self.down_fd >= 0:
             ss = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             ss.bind(("", 0))
             ss.listen(10)
@@ -377,7 +377,11 @@ class ring_connector:
         # am I the sender?
         do_send = (self.up_fd is not None and self.up_fd != -1)
         # am I a receiver?
-        do_recv = (self.down_fd is not None and self.down_fd != -1)
+        # do_recv = (self.down_fd is not None and self.down_fd != -1)
+        # if --write 0 is given, we do not write, but still recv
+        # data. thus, down_fd is not the right indicator of
+        # whether this process should recv
+        do_recv = (self.exec_idx != self.src_idx)
         # open server socket
         self.open_server_socket()
         # send my info to the master
@@ -405,6 +409,7 @@ class ring_connector:
             np = int(np)
             port = int(port)
             sz = int(sz)
+            assert (ds or dr)
             if ds or dr:
                 # processes that neither send nor recv 
                 # are not involved
@@ -696,13 +701,16 @@ class ring_connector:
         self.down_fd = self.open_dst(src_spec, dst_spec)
         nr = self.exchange_end_points()
         if nr < self.opts.min_receivers: return -1
-        if self.up_fd >= 0 or self.down_fd >= 0:
+        if 1:
             assert self.players.has_key(self.exec_idx)
         else:
-            assert (not self.players.has_key(self.exec_idx)), \
-                (self.exec_idx, self.players, 
-                 self.up_fd, self.down_fd)
-            # I do not participate. I quite (others may continue)
+            if self.up_fd >= 0 or self.down_fd >= 0:
+                assert self.players.has_key(self.exec_idx)
+            else:
+                assert (not self.players.has_key(self.exec_idx)), \
+                    (self.exec_idx, self.players, 
+                     self.up_fd, self.down_fd)
+            # I do not participate. I quit (others may continue)
             return -1
         if self.make_ring() == -1: return -1
         if self.opts.transfer:
