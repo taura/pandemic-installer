@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.9 2015/05/11 14:18:11 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.10 2015/05/11 14:56:28 ttaauu Exp $
 # $Name:  $
 #
 
@@ -762,6 +762,7 @@ class ring_connector:
         offset = begin_offset   # the offset we have written up to
         pkt_sz = self.opts.pkt_sz
         # the main loop.
+        Xp = "w" * pkt_sz
         while offset < end_offset:
             sz_to_read = min(end_offset - offset, pkt_sz)
             if up_fd is not None:
@@ -772,7 +773,10 @@ class ring_connector:
                        % (progname, self.gupid))
                     return -1
             elif self.opts.transfer == 0:
-                X = "w" * sz_to_read
+                if sz_to_read == pkt_sz:
+                    X = Xp
+                else:
+                    X = "w" * sz_to_read
             else:
                 # not source. recv from the left neighbor
                 X = self.recv_bytes(self.left_so, sz_to_read)

@@ -1,3 +1,5 @@
+/bcp/1.12/Fri May  8 09:01:30 2015//
+/blkcpm/1.2/Fri May  8 09:01:30 2015//
 /bomb/1.2/Sat Jun  6 14:06:26 2009//
 /conn/1.12/Fri Mar  5 05:27:09 2010//
 /consub/1.4/Fri Mar  5 05:27:09 2010//
@@ -35,6 +37,4 @@
 /xmake2.mk/1.1/Sun Dec 12 06:54:29 2010//
 D/experimental////
 D/obsolete////
-/bcp/1.12/Mon May 11 04:07:15 2015//
-/blkcpm/1.2/Mon May 11 04:07:16 2015//
-/blkcpc/1.7/Mon May 11 14:12:09 2015//
+/blkcpc/1.10/Mon May 11 14:58:55 2015//
