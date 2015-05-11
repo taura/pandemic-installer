@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.7 2015/05/11 13:57:06 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.9 2015/05/11 14:18:11 ttaauu Exp $
 # $Name:  $
 #
 
@@ -944,7 +944,7 @@ firewall between hosts for now.
                 (progname, self.gupid, t1 - t0, t2 - t1, op,
                  end - begin,
                  (end - begin) / (1024.0 * 1024.0 * (t2 - t1)))))
-        if self.down_fd is not None:
+        if self.down_fd is not None or (self.opts.write == 0 and self.exec_idx != self.src_idx):
             Ws("%s : DONE\n" % self.gupid)
         return 0
         
@@ -961,6 +961,7 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
 
 
 
