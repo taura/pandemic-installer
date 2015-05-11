@@ -1,6 +1,10 @@
 #!/usr/bin/python
 import os,sys,string
 
+#
+# the driver of blkcp
+#
+
 def Es(s):
     sys.stderr.write(s)
 
@@ -13,6 +17,11 @@ def recv():
 def main():
     n_procs = -1
     recved = 0
+    # collect info from blkcpc (see self.up(...)
+    # in blkcpc). 
+    # in the beginning we don't know how many
+    # clients are there. the first message will
+    # tell it.
     while n_procs == -1 or recved < n_procs:
         line = recv()
         if line == "":
@@ -25,6 +34,7 @@ def main():
             n_procs = np
         else:
             assert (n_procs == np),(n_procs,np)
+        # broadcast it to all clients
         send(line)
         recved = recved + 1
 

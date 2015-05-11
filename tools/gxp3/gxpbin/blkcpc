@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.3 2015/04/28 12:40:56 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.4 2015/05/08 09:01:30 ttaauu Exp $
 # $Name:  $
 #
 
@@ -48,8 +48,17 @@ class bcp_cmd_opts(opt2.cmd_opts):
         # range to copy (default = the whole file)
         self.range = ("s", ":")
         self.min_receivers = ("i", 1)
-        self.creat = (None, 0)
-        self.trunc = (None, 0)
+        self.creat = ("i", 0)
+        self.trunc = ("i", 0)
+        self.write = ("i", 1)
+        self.transfer = ("i", 1)
+        self.send_fail = ("f", 0.0)
+        self.recv_fail = ("f", 0.0)
+        self.closesocket_fail = ("f", 0.0)
+        self.read_fail = ("f", 0.0)
+        self.write_fail = ("f", 0.0)
+        self.close_fail = ("f", 0.0)
+        self.fail_block = ("i", 1)
         self.help = (None, 0)
 
     def safe_num(self, x):
@@ -166,6 +175,7 @@ class ring_connector:
         self.src_file = src_file
         self.src_file_sz = -1
         fd = None
+        # if you don't transfer, no need to open
         if self.exec_idx == self.src_idx:
             fd = self.safe_open_to_read(src_file)
             if fd == -1:
@@ -191,7 +201,7 @@ class ring_connector:
         self.dst_file to the destination file name
         """
         self.dst_file = dst_file
-        if self.exec_idx == self.src_idx:
+        if not self.opts.write or self.exec_idx == self.src_idx:
             # src never writes, to avoid accidentally
             # overwriting /dev/sda of the source node
             # os.path.exists(dst_file) and 
@@ -199,7 +209,6 @@ class ring_connector:
             return None
         else:
             return self.safe_open_to_write(dst_file)
-
 
     def open_server_socket(self):
         """
@@ -222,6 +231,126 @@ class ring_connector:
             self.ss = None
             self.ip_addr = None
             self.port = 0
+
+    def fail_with_prob(self, p, op):
+        if self.rg.random() < p:
+            if self.opts.fail_block:
+                Es("[%s:%d] : %s failure injected. indefinitely block\n" 
+                   % (self.host, self.exec_idx, op))
+                while 1:
+                    time.sleep(5)
+            else:
+                Es("[%s:%d] : %s failure injected. exit\n" 
+                   % (self.host, self.exec_idx, op))
+                os._exit(1)
+
+    def safe_sendall(self, so, X):
+        self.fail_with_prob(self.opts.send_fail, "send")
+        try:
+            self.right_so.sendall(X)
+            return 0            # OK
+        except socket.error,e:
+            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
+            return -1
+
+    def send_all(self, so, X):
+        return self.safe_sendall(so, X)
+
+    def safe_recv(self, so, sz):
+        self.fail_with_prob(self.opts.recv_fail, "recv")
+        try:
+            return so.recv(sz)
+        except socket.error,e:
+            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
+            return None
+
+    def recv_bytes(self, so, sz):
+        """
+        receive exactly sz bytes from the socket so
+        """
+        X = []
+        sz_recved = 0
+        while sz_recved < sz:
+            x = self.safe_recv(so, sz - sz_recved)
+            if x is None or x == "":
+                Es("[%s:%d] : socket prematurely closed\n" 
+                   % (self.host, self.exec_idx))
+                return None
+            X.append(x)
+            sz_recved = sz_recved + len(x)
+        return string.join(X, "")
+
+    def safe_closesocket(self, so):
+        self.fail_with_prob(self.opts.closesocket_fail, "closesocket")
+        try:
+            so.close()
+            return 0
+        except socket.error,e:
+            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
+            return -1
+
+    def safe_read(self, fd, sz):
+        """
+        read without exception
+        """
+        self.fail_with_prob(self.opts.read_fail, "read")
+        try:
+            return os.read(fd, sz)
+        except OSError,e:
+            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
+            return None
+
+    def read_bytes(self, fd, sz):
+        """
+        read exactly sz bytes from fd
+        """
+        X = []
+        sz_read = 0
+        while sz_read < sz:
+            x = self.safe_read(fd, sz - sz_read)
+            if x is None or len(x) == 0:
+                Es("[%s:%d] : premature end of file\n" 
+                   % (self.host, self.exec_idx))
+                return None
+            sz_read = sz_read + len(x)
+            X.append(x)
+        return string.join(X, "")
+
+    def safe_write(self, fd, X):
+        """
+        write without exception
+        """
+        self.fail_with_prob(self.opts.write_fail, "write")
+        try:
+            return os.write(fd, X)
+        except OSError,e:
+            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
+            return -1
+
+    def write_all(self, fd, X):
+        """
+        write X bytes; never return prematurely
+        """
+        sz = len(X)
+        sz_written = 0
+        while sz_written < sz:
+            w = self.safe_write(fd, X[sz_written:])
+            if w == -1:
+                return -1
+            sz_written = sz_written + w
+        return 0                # OK
+
+    def safe_close(self, fd):
+        """
+        close withot an exception
+        """
+        self.fail_with_prob(self.opts.close_fail, "close")
+        try:
+            os.close(fd)
+            return 0
+        except OSError,e:
+            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
+            return -1
 
     def exchange_end_points(self):
         """
@@ -263,8 +392,13 @@ class ring_connector:
         n_senders = 0
         src_host = None
         for i in range(self.n_procs):
-            [ ds,dr,idx,np,host,ip,port,sz ] \
-                = string.split(self.getline())
+            line = string.split(self.getline())
+            if len(line) == 8:
+                [ ds,dr,idx,np,host,ip,port,sz ] = line
+            else:
+                Es("[%s:%d] : error: wrong msg from the master ('%s')\n" % \
+                   (self.host, self.exec_idx, line))
+                return -1
             ds = int(ds)
             dr = int(dr)
             idx = int(idx)
@@ -289,9 +423,9 @@ class ring_connector:
         if dbg>=3:
             Es("[%s:%d] : %d senders, %d receivers\n"
                % (self.host, self.exec_idx, n_senders, n_receivers))
-        if n_senders != 1:
+        if self.opts.transfer and n_senders != 1:
             if self.exec_idx == 0:
-                Es("%s : BUG: %d (> 1) senders!\n" % \
+                Es("%s : BUG: %d (!= 1) senders!\n" % \
                    (self.host, n_senders))
             return -1
         if self.exec_idx == 0:
@@ -379,6 +513,8 @@ class ring_connector:
                          socket.SO_RCVBUF)
         return ls
 
+
+
     def make_ring(self):
         """
         connect all processes in a ring.
@@ -428,13 +564,16 @@ class ring_connector:
         # my left neighbor
         _,_,_,_,left_host,left_ip,left_port,_ \
             = players_list[(self.rank - 1) % n]
-        # connect to my right neighbor
-        self.right_so \
-            = self.connect_to(right_host, right_ip, right_port)
-        self.right_host = right_host
-        # accept connection from my left neighbor
-        self.left_so = self.accept()
         self.left_host = left_host
+        self.right_host = right_host
+        self.left_so = None
+        self.right_so = None
+        if self.opts.transfer:
+            # connect to my right neighbor
+            self.right_so = self.connect_to(right_host, 
+                                            right_ip, right_port)
+            # accept connection from my left neighbor
+            self.left_so = self.accept()
         return 0
 
     def test_ring(self):
@@ -446,10 +585,13 @@ class ring_connector:
             if dbg>=3:
                 Es("[%s:%d] : send a token to test ring\n"
                    % (self.host, self.exec_idx))
-            self.right_so.send("a")
-            x = self.left_so.recv(1)
+            if self.send_all(self.right_so, "a") == -1:
+                Es("[%s:%d] : failed to send a token\n" 
+                   % (self.host, self.exec_idx))
+                return -1
+            x = self.recv_bytes(self.left_so, 1)
             if x != "a":
-                Es("[%s:%d] : could not begin transfer\n" 
+                Es("[%s:%d] : failed to recv a token back\n" 
                    % (self.host, self.exec_idx))
                 return -1
             if dbg>=3:
@@ -459,25 +601,33 @@ class ring_connector:
             if dbg>=3:
                 Es("[%s:%d] : wait for a token\n" 
                    % (self.host, self.exec_idx))
-            x = self.left_so.recv(1)
+            x = self.recv_bytes(self.left_so, 1)
+            if x != "a":
+                Es("[%s:%d] : failed to recv a token\n" 
+                   % (self.host, self.exec_idx))
+                return -1
             if dbg>=3:
                 Es("[%s:%d] : last receiver received a token\n" 
                    % (self.host, self.exec_idx))
-            self.right_so.send(x)
+            if self.send_all(self.right_so, x) == -1:
+                Es("[%s:%d] : failed to send a token\n" 
+                   % (self.host, self.exec_idx))
+                return -1
         return 0
 
-    def recv_bytes(self, so, sz):
+    def safe_num(self, x):
         """
-        receive exactly sz bytes from the socket so
+        convert string to int without exception
+           "345" -> 345
+           "abc" -> None
+
         """
-        X = []
-        sz_recved = 0
-        while sz_recved < sz:
-            x = so.recv(sz - sz_recved)
-            assert (len(x) > 0), (sz_recved, sz)
-            X.append(x)
-            sz_recved = sz_recved + len(x)
-        return string.join(X, "")
+        try:
+            return int(x)
+        except ValueError:
+            return None
+        except:
+            raise
 
     def share_stat_info(self):
         """
@@ -489,30 +639,42 @@ class ring_connector:
             stat_info_s = cPickle.dumps(self.stat_info)
             stat_size = len(stat_info_s)
             pkt = "%9d %s" % (stat_size, stat_info_s)
-            self.right_so.send(pkt)
+            if self.send_all(self.right_so, pkt) == -1:
+                Es("[%s:%d] : failed to send stat info\n" 
+                   % (self.host, self.exec_idx))
+                return -1
             stat_size_back = self.recv_bytes(self.left_so, 10)
             if stat_size_back != ("%9d " % stat_size):
-                Es("[%s:%d] : could not begin transfer\n" 
+                Es("[%s:%d] : failed to recv stat info size token back\n" 
                    % (self.host, self.exec_idx))
                 return -1
             if dbg>=3:
-                Es("[%s:%d] : received a stat size token back. ring is OK\n"
+                Es("[%s:%d] : received a stat info size token back. ring is OK\n"
                    % (self.host, self.exec_idx))
             stat_info_back = self.recv_bytes(self.left_so, int(stat_size_back))
             if stat_info_back != stat_info_s:
-                Es("[%s:%d] : could not begin transfer\n" 
+                Es("[%s:%d] : failed to recv stat info back\n" 
                    % (self.host, self.exec_idx))
                 return -1
             if dbg>=3:
-                Es("[%s:%d] : received a stat info token back. ring is OK\n" 
+                Es("[%s:%d] : received stat info token back. ring is OK\n" 
                    % (self.host, self.exec_idx))
         else:
             if dbg>=3:
-                Es("[%s:%d] : wait for a stat info\n" 
+                Es("[%s:%d] : wait for stat info\n" 
                    % (self.host, self.exec_idx))
-            stat_size = self.recv_bytes(self.left_so, 10)
-            stat_info_s = self.recv_bytes(self.left_so, int(stat_size))
-            self.right_so.send(stat_size + stat_info_s)
+            stat_size_s = self.recv_bytes(self.left_so, 10)
+            stat_size = self.safe_num(stat_size_s)
+            if stat_size is None:
+                Es("[%s:%d] : failed to recv stat info size token\n" 
+                   % (self.host, self.exec_idx))
+                return -1
+            stat_info_s = self.recv_bytes(self.left_so, stat_size)
+            if self.send_all(self.right_so, 
+                             stat_size_s + stat_info_s) == -1:
+                Es("[%s:%d] : failed to send stat info\n" 
+                   % (self.host, self.exec_idx))
+                return -1
             self.stat_info = cPickle.loads(stat_info_s)
         return 0
         
@@ -532,6 +694,8 @@ class ring_connector:
             self.exec_idx = 0
             self.gxp_host = ""
             self.gupid = ""
+        self.rg = random.Random()
+        self.rg.seed(self.exec_idx)
         self.up_fd = self.open_src(src_spec)
         # the source failed to open. quit
         # if self.up_fd == -1: return -1
@@ -548,8 +712,9 @@ class ring_connector:
             # I do not participate. I quite (others may continue)
             return -1
         if self.make_ring() == -1: return -1
-        if self.test_ring() == -1: return -1
-        if self.share_stat_info() == -1: return -1
+        if self.opts.transfer:
+            if self.test_ring() == -1: return -1
+            if self.share_stat_info() == -1: return -1
         if re.match(self.opts.show_progress, self.host) \
            or (dbg>=2 and self.rank == self.final_rank):
             self.show_progress = 1
@@ -561,67 +726,9 @@ class ring_connector:
         """
         wrap up. get the file permission right.
         """
-        if self.rank != self.src_rank:
+        if self.opts.transfer and self.rank != self.src_rank:
             os.chmod(self.dst_file, self.stat_info.st_mode)
         return 0
-
-    def safe_read(self, fd, sz):
-        """
-        read without exception
-        """
-        try:
-            return os.read(fd, sz)
-        except OSError,e:
-            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
-            return -1
-
-    def read_bytes(self, fd, sz):
-        """
-        read exactly sz bytes from fd
-        """
-        X = []
-        sz_read = 0
-        while sz_read < sz:
-            x = self.safe_read(fd, sz - sz_read)
-            if x is None or len(x) == 0:
-                return None
-            sz_read = sz_read + len(x)
-            X.append(x)
-        return string.join(X, "")
-
-    def safe_write(self, fd, X):
-        """
-        write without exception
-        """
-        try:
-            return os.write(fd, X)
-        except OSError,e:
-            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
-            return -1
-
-    def write_all(self, fd, X):
-        """
-        write X bytes; never return prematurely
-        """
-        sz = len(X)
-        sz_written = 0
-        while sz_written < sz:
-            w = self.safe_write(fd, X[sz_written:])
-            if w == -1:
-                return -1
-            sz_written = sz_written + w
-        return 0                # OK
-
-    def safe_close(self, fd):
-        """
-        close withot an exception
-        """
-        try:
-            os.close(fd)
-            return 0
-        except OSError,e:
-            Es("[%s:%d] : %s\n" % (self.host, self.exec_idx, e))
-            return -1
 
     def transfer(self):
         """
@@ -657,48 +764,68 @@ class ring_connector:
             if up_fd is not None:
                 # source: read from the file
                 X = self.read_bytes(up_fd, sz_to_read)
+                if X is None: 
+                    Es("[%s:%d] : failed to read payload\n" 
+                       % (self.host, self.exec_idx))
+                    return -1
+            elif self.opts.transfer == 0:
+                X = "w" * sz_to_read
             else:
                 # not source. recv from the left neighbor
                 X = self.recv_bytes(self.left_so, sz_to_read)
+                if X is None: 
+                    Es("[%s:%d] : failed to recv payload\n" 
+                       % (self.host, self.exec_idx))
+                    return -1
             assert (len(X) == sz_to_read), (len(X), sz_to_read)
-            if self.rank != self.final_rank:
+            if self.opts.transfer and self.rank != self.final_rank:
                 # I am not the last receiver; forward it to the right
-                self.right_so.sendall(X)
+                if self.send_all(self.right_so, X) == -1:
+                    Es("[%s:%d] : failed to send payload\n" 
+                       % (self.host, self.exec_idx))
+                    return -1
             if down_fd is not None:
                 # write to the file
                 if self.write_all(down_fd, X) == -1:
-                    break
+                    Es("[%s:%d] : failed to write payload\n" 
+                       % (self.host, self.exec_idx))
+                    return -1
             offset = offset + len(X)
         # determine I have suceeded
         if down_fd is None:
             # I did not write-open the file.
             # I must be the sender. treat it as a success
-            ret = 0
+            pass
         else:
             # try to close it. 
             # I succeeded when I successfully close it
-            ret = self.safe_close(down_fd)
+            if self.safe_close(down_fd) == -1:
+                # error during close; msg must have been written
+                Es("[%s:%d] : failed to close the file\n" 
+                   % (self.host, self.exec_idx))
+                return -1
         if self.rank == self.final_rank:
             if dbg>=2:
                 Es("[%s:%d] : last receiver finished writing\n" 
                    % (self.host, self.exec_idx))
-        if dbg>=3:
-            Es("[%s:%d] : close socket to right neibhbor\n" 
-               % (self.host, self.exec_idx))
-        self.right_so.close()
-        if dbg>=3:
-            Es("[%s:%d] : OK\n" % (self.host, self.exec_idx))
-        if dbg>=3:
-            Es("[%s:%d] : wait for socket from left neibhbor to be closed\n" 
-               % (self.host, self.exec_idx))
-        c = self.left_so.recv(1)
-        if c != "":
-            Es("[%s:%d] : bcp: error: socket not cleanly closed\n" 
-               % (self.host, self.exec_idx))
-            return -1
-        if ret == -1:
-            # error during close; msg must have been written
-            return -1
+        if self.opts.transfer:
+            if dbg>=3:
+                Es("[%s:%d] : close socket to right neibhbor\n" 
+                   % (self.host, self.exec_idx))
+            if self.safe_closesocket(self.right_so) == -1:
+                Es("[%s:%d] : failed to close the socket\n" 
+                   % (self.host, self.exec_idx))
+                return -1
+            if dbg>=3:
+                Es("[%s:%d] : OK, wait for socket from"
+                   " left neibhbor to be closed\n" 
+                   % (self.host, self.exec_idx))
+            c = self.safe_recv(self.left_so, 1)
+            if c != "":
+                Es("[%s:%d] : blkcpc: warning: socket not"
+                   " cleanly closed (data should be OK)\n" 
+                   % (self.host, self.exec_idx))
+                return -1
         if dbg>=3:
             Es("[%s:%d] : OK\n" % (self.host, self.exec_idx))
         return 0
@@ -775,7 +902,7 @@ firewall between hosts for now.
 
 """)
         
-    def main(self, argv):
+    def main_ex(self, argv):
         # bcp src [dest]
         global dbg
         opts = bcp_cmd_opts()
@@ -814,9 +941,17 @@ firewall between hosts for now.
                 (self.host, self.exec_idx, t1 - t0, t2 - t1,
                  end - begin,
                  (end - begin) / (1024.0 * 1024.0 * (t2 - t1)))))
-        Ws("OK %s %d %s\n" % (self.host, self.exec_idx, self.gupid))
+        Ws("DONE %s %d %s\n" % (self.host, self.exec_idx, self.gupid))
         return 0
         
+    def main(self, argv):
+        try:
+            return self.main_ex(argv)
+        except KeyboardInterrupt:
+            Es("[%s:%d] : got keyboard interrupt; quit\n"
+               % (self.host, self.exec_idx))
+            return 1
+
 def main():
     return ring_connector().main(sys.argv[1:])
 
@@ -824,6 +959,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: blkcpc,v $
+# Revision 1.4  2015/05/08 09:01:30  ttaauu
+# refactor blkcpc and bcp
+#
 # Revision 1.3  2015/04/28 12:40:56  ttaauu
 # blkcpc never writes to source node
 #
