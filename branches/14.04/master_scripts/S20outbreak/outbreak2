@@ -61,6 +61,7 @@ verify=0
 # data copied per invocation of blkcpc.
 #
 blk_sz=$((64 * 2 ** 20))
+pkt_sz=$((32 * 1024))
 
 #
 # timeout for transfering blk_sz bytes. 0 means
@@ -156,6 +157,7 @@ usage() {
     echo "  --mode local/production [${mode}]"
     echo "  --verbosity 0-4 [${verbosity}]"
     echo "  --blk_sz N [${blk_sz}]"
+    echo "  --pkt_sz N [${pkt_sz}]"
     echo "  --timeout S [${timeout}]"
     echo "  --never_quit_above [${never_quit_above}]"
     echo "  --read_fault p [${read_fault}]"
@@ -547,7 +549,7 @@ EOF
 # will set the command line of this process that can be
 # easily parsed.
 #
-eval set -- $(getopt -o "hnf" --long help,long_help,force,dryrun,resume,verify,disk_check,net_check,no_wallpaper,blk_sz:,timeout:,never_quit_above:,mode:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
+eval set -- $(getopt -o "hnf" --long help,long_help,force,dryrun,resume,verify,disk_check,net_check,no_wallpaper,blk_sz:,pkt_sz:,timeout:,never_quit_above:,mode:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
 
 parse_args() {
     # the command line has been canonicalized, so we simply
@@ -604,6 +606,10 @@ parse_args() {
 		;;
 	    --blk_sz)
 		blk_sz="$2"
+		shift 2
+		;;
+	    --pkt_sz)
+		pkt_sz="$2"
 		shift 2
 		;;
 	    --timeout)
@@ -994,7 +1000,7 @@ copy_block() {
 	gxpc smask
 	if [ $i -gt 0 ] ; then
 	    echo "outbreak: check disk writes"
-	    n_disk_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --creat ${creat} --trunc ${trunc} --read_fault ${read_fault} --send_fault ${send_fault} --recv_fault ${recv_fault} --write_fault ${write_fault} --close_fault ${close_fault} --closesocket_fault ${closesocket_fault} --block_on_fault ${block_on_fault} --min_receivers 0 --write 1 --transfer 0 --range ${a}:${b} ${src_file} ${dst_file}" | grep DONE | wc -l)
+	    n_disk_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --pkt_sz ${pkt_sz} --creat ${creat} --trunc ${trunc} --read_fault ${read_fault} --send_fault ${send_fault} --recv_fault ${recv_fault} --write_fault ${write_fault} --close_fault ${close_fault} --closesocket_fault ${closesocket_fault} --block_on_fault ${block_on_fault} --min_receivers 0 --write 1 --transfer 0 --range ${a}:${b} ${src_file} ${dst_file}" | grep DONE | wc -l)
 	    echo "outbreak: ${n_disk_ok} processes have OK disks"
 	    if [ "${n_disk_ok}" = "0" ]; then break ; fi
 	    gxpc smask
@@ -1009,7 +1015,7 @@ copy_block() {
 	    set -x
 	fi
 
-	n_copy_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --creat ${creat} --trunc ${trunc} --read_fault ${read_fault} --send_fault ${send_fault} --recv_fault ${recv_fault} --write_fault ${write_fault} --close_fault ${close_fault} --closesocket_fault ${closesocket_fault} --block_on_fault ${block_on_fault} --min_receivers 0 --write ${do_write} --transfer ${do_trans} --range ${a}:${b} ${src_file} ${dst_file}" | grep DONE | wc -l)
+	n_copy_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --pkt_sz ${pkt_sz} --creat ${creat} --trunc ${trunc} --read_fault ${read_fault} --send_fault ${send_fault} --recv_fault ${recv_fault} --write_fault ${write_fault} --close_fault ${close_fault} --closesocket_fault ${closesocket_fault} --block_on_fault ${block_on_fault} --min_receivers 0 --write ${do_write} --transfer ${do_trans} --range ${a}:${b} ${src_file} ${dst_file}" | grep DONE | wc -l)
 	set +x
 
 	n_failed=$((${n_ping_ok} - ${n_copy_ok} - 1))
