@@ -923,9 +923,7 @@ copy_stuff() {
     if [ "${n_clients}" =  "${n_copy_ok}" ]; then
 	return 0
     else
-	if [ "${verbosity}" -ge 2 ]; then
-	    echo "failed to copy to some clients"
-	fi
+	echo "failed to copy to some clients"
 	return 1
     fi
 }
