@@ -1101,9 +1101,9 @@ copy_block() {
 	    echo "outbreak: ****** only ${n_copy_ok} processes succeeded (out of ${n_disk_ok})"
 	fi
     done
-    # get the set of clients that have suceeded
+    # get the set of clients that have succeeded
     gxpc savemask after
-    # update checkpoint files of those who have suceeded
+    # update checkpoint files of those who have succeeded
     gxpc -G ${src_gupid} export outbreak_offset=${b}
 
     # modify checkpoint file
@@ -1229,17 +1229,16 @@ main() {
 	copy_block ${src_file} ${dst_file} ${a} ${b} .
 	a=${b}
     done
+    nc=$(gxpc -G ${src_gupid} ping | wc -l)
+    gxpc smask
     # congrat. if you have gone thus far, you succeeded.
     # change wallpaper
-    if [ "${verbosity}" -ge 1 ]; then
-	echo "outbreak: set wallpaper to success"
-    fi
     if [ "${wallpaper}" = 1 ]; then
+	if [ "${verbosity}" -ge 1 ]; then
+	    echo "outbreak: set wallpaper to success"
+	fi
 	gxpc -G ${src_gupid} e ./cs success
-    else
-	gxpc -G ${src_gupid} ping > /dev/null
     fi
-    gxpc smask
     echo "outbreak: ${nc} clients succeeded:"
     gxpc e echo "\$(hostname) \(\$(hostname -I)\) \${GXP_GUPID}"
 }
