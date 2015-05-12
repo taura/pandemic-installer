@@ -151,6 +151,8 @@ usage() {
     echo "OPTIONS:"
     echo "  -h,--help"
     echo "  --long_help"
+    echo "  -n,--dryrun"
+    echo "  -f,--force"
     echo "  --resume"
     echo "  --ignore_timestamp"
     echo "  --verify"
@@ -178,211 +180,287 @@ usage() {
 long_usage() {
     cat <<EOF
 
-DESCRIPTION:
+DESCRIPTION: 
+
   outbreak2 copies SRC on the local machine
-into DST on client machines.  See EXAMPLES
-section for some examples.  Without any
-option, it will copy /dev/sda of the local
-machine into /dev/sda of all client machines.
-Client machines are listed in ping.mk in the
-same directory of outbreak2 (${this_dir}).
-By default, it is all machines having IP
-addresses 10.0.3.100-10.0.3.199.
+  into DST on client machines.  See EXAMPLES
+  section for some examples.  Without any
+  option, it will copy /dev/sda of the local
+  machine into /dev/sda of all client
+  machines.  Client machines are listed in
+  ping.mk in the same directory of outbreak2
+  (${this_dir}).  By default, it is all
+  machines having IP addresses
+  10.0.3.100-10.0.3.199 and responding to
+  ping.  In any case, it briefly shows what
+  is going happen (which file is copied to
+  which clients) and asks you if it can go
+  ahead.  -f option forces it to go ahead
+  without asking.
 
-BASIC BEHAVIOR:
+THE BASIC BEHAVIOR: 
 
-Since this command is primarily intended to
-copy an entire drive typically hundreds of
-giga bytes large, it has provisions for
-gracefully handling faults.  Gracefully
-handling faults in this context means two
-things.
+  Since this command is primarily intended to
+  copy an entire drive typically hundreds of
+  giga bytes large, it has provisions for
+  gracefully handling faults.
 
-(i) When a client experiences a fault, other
-healthy clients can continue; outbreak2
-actually judges if it should continue with
-remaining clients or stop the entire process
-(bail out) with the following criterion;
-basically, it bails out when so many clients
-left so early.  The basic idea behind this is
-when it happens, restarting from the
-beginning won't lose too much work, so giving
-the user a chance to add some more clients or
-fix any problem that makes faults so common
-will give a better harvest rate.  More
-specifically, it continues when the following
-is satisfied.
+  (i) When a client experiences a fault,
+  other healthy clients can continue;
+  outbreak2 actually judges if it should
+  continue with remaining clients or stop the
+  entire process (bail out). When an error
+  occurs, you can hopefully just sit down and
+  keep watching until it finishes with the
+  remaining clients or bails out.
+
+  The criteria used to decide if it continues
+  or bails out is that it bails out when so
+  many clients failed so early.  The basic
+  idea behind this is when it happens,
+  restarting from the beginning won't lose
+  too much time.  You also do not want to
+  keep waiting for the remaining clients to
+  finish when the harvest you can expect is
+  already low.  More specifically, it
+  continues when the following is satisfied.
 
    fraction of remaining clients
- + fraction of already copied data > 0.9
+     + fraction of already copied data > 0.9
 
-When some errors occur, you can hopefully
-just sit down and keep watching until it
-finishes with the remaining clients or bails
-out.  If it finishes, you'll get a fair
-number of clients.  If it bails out and you
-get no successful clients, it should be
-because when so many clients have failed
-pretty early, so restarting the process from
-the beginning won't lose too much time.  You
-also do not want to keep waiting for the
-remaining clients to finish when the maximum
-harvest you can expect is already low.  It
-will also be likely that you want to examine
-why so many faults happened and change the
-set of clients or fix the network
-connectivity anyway.
+  (ii) When the entire process bails out, you
+  can still resume from the point where the
+  first fault happens, with --resume and
+  --ignore_stamp option (see the section
+  "BEHAVIOR OF --RESUME OPTION" below).  To
+  this end, outbreak2 is writing the progress
+  to a checkpoint file (ckpt.db) in the
+  current directory.  When --resume option is
+  given, it reads the checkpoint file to
+  determine where it should start again.
 
-(ii) When the entire process bails out, you
-can still resume from the point where the
-first fault happens, with --resume option.
-To this end, outbreak2 is writing the
-progress to a checkpoint file (ckpt.db) in
-the current directory.  When --resume option
-is given, it reads the checkpoint file to
-determine where it should start again.
+  During the operation, a window showing the
+  status will pop up on the desktop of each
+  client.  It shows hostname, IP address,
+  working directory, a globally unique ID
+  (that can be matched with text messages on
+  the local terminal), and the status
+  (started, succeeded, failed, bailed out).
+  As soon as a client drops out due to a
+  fault, the window indicating the failure
+  will show up on the client.
 
-During the operation, a window showing the
-status will pop up on the desktop of each
-client.  It shows hostname, IP address,
-working directory, a globally unique ID (that
-can be matched with text messages on the
-local terminal), and the status (started,
-succeeded, failed, bailed out).  As soon as a
-client drops out due to a fault, the window
-indicating the failure will show up on the
-client.  
+  On the local terminal, various progress and
+  event messages will be shown, including how
+  much progress has been made and the number
+  of clients still engaged.
 
-On the local terminal, various progress and
-event messages will be shown.  They include:
+A DETAILED BEHAVIOR UPON A FAILURE: 
 
- (a) How much progress has been made.  In
- general, all clients will progress in the
- same pace.  It repeats copying a block of
- the size defined by --blk_sz option to all
- the clients (default: 64MB).  Unless all
- clients are done with the block, no clients
- will go ahead.  So it keeps track of and
- shows the progress of all the clients with a
- single global value.
+  It copies the source drive (or a file, for
+  that matter) by dividing the drive into a
+  number of blocks.  A single block is read,
+  transferred, and written at a time.  A
+  single block is 128MB by default
+  (changeable by --blk_sz option).  Progress
+  is managed and failures handled on a
+  block-by-block basis.
 
- (b) Clients that have failed, along with
- the error message they encounter, as long
- as they can deliver it back to the local 
- machine.
- 
-
-DISK COPY VS. FILE COPY:
-Although its primary purpose is to copy an
-entire disk, which is a special (device)
-file, it can also be used to copy a regular
-file.  You may simply give regular file names
-as the source and destination files.  e.g.,
-  ./outbreak2 big_file_src big_file_dst
-or
-  ./outbreak2 big_file 
-the latter of which is equivalent to 
-  ./outbreak2 big_file big_file 
-
-This feature is mainly used for debugging and
-testing this program (you don't want to copy
-/dev/sda each time you test it, do you?).
-
-Care must be taken how to interpret the
-relative path name given as the destination
-file.  A unique directory is created for each
-client and it is used for the base path of
-relative path names; thus, the relative
-destination path becomes unique EVEN IF SOME
-CLIENTS RUN on the same machine.
-
-LOCAL TEST MODE: 
-To facilitate debugging and testing, it has a
---mode=local option.  When --mode=local is
-given, all clients run on the same machine.
-See the description of --mode option below.
+  When copying a block to all clients fails
+  for any reason, then it tries to detect and
+  remove suspicious clients.  First, it
+  detects any client that is unreachable (by
+  means of gxpc ping command) and remove
+  them.  Second, it lets reachable clients
+  write some random data to the range of the
+  destination file that have just experienced
+  a failure, to detect clients that suffer
+  from broken disks.  Such clients are
+  removed.  Then it retries to copy the same
+  block to still remaining clients.  When it
+  fails again, it could repeat the above
+  ping--random writes--copy cycle any number
+  of times.  Any client that has failed in
+  the above process (either because it did
+  not respond to ping or failed to complete
+  the random write) won't participate in the
+  rest of the process.
 
 BEHAVIOR OF --RESUME OPTION:
 
-All clients still participating basically
-make an equal progress.  A single block of
-the size specified by --blk_sz is sent and
-written into all clients before any client
-goes ahead.  Whenever a single block has been
-written to all clients that are active at
-that time, outbreak2 will record the fact to
-a checkpoint file (ckpt.db), which is a
-simple human-readable text file.  Each record
-of the file looks like:
+  Each time you run outbreak2, it will copy
+  the entire drive from the beginning.  If
+  you want to start from the point where the
+  first failure occurs in the last
+  invocation, you can give --resume option,
+  possibly with --ignore_timestamp.  But you
+  better understand how it works before you
+  use it.  Carelessly using it might end up
+  with a partially copied disk.
 
-  addrs|path|mtime|size
+  If you are impatient, remember the
+  following.
 
-ADDRS column is the list of IP addresses of
-the client, as obtained by hostname -I
-command (there may be multiple IP addresses).
-PATH is the canonical absolute path name of
-the destination file, as obtained by
-os.path.realpath method of python module.
-MTIME is the modification time of the
-destination file as obtained by
-os.stat(..).st_mtime.  SIZE is the number of
-bytes that have been successfully written.
+  (i) outbreak2 will show the offset it would
+  start from and ask you if it should go
+  ahead.  See the value to see if it makes
+  sense to you (i.e., where the first fault
+  occurred during the last run).
 
-Whenever a single block of the size specified
-by --blk_sz option has been successfully
-written to all clients, outbreak2 will update
-the corresponding records of the checkpoint
-file.  In this process, the pair (addrs,
-path) is used as a key.  In effect, it will
-update MTIME and SIZE of still running
-clients.  The record of a clients that
-participated but has already dropped out due
-to a fault won't be updated from the point
-when it failed.  So, even if all
-participating clients progress in an equal
-pace, we may end up with different values in
-the SIZE field among clients.
+  (ii) --resume --ignore_timestamp is safe
+  ONLY WHEN YOU DO NOT CONNECT NEW CLIENTS,
+  RECONNECT/REBOOT FAILED CLIENTS, NOR WRITE
+  TO THE FAILED DISK.  In short, use
+  --ignore_timestamp only when you leave
+  failed machines as they are (don't reboot them,
+  don't modify their disks) and rerun outbreak2
+  again from that state.
 
-When outbreak2 is executed with --resume
-option, it consults the checkpoint file and
-matches clients that participate this time
-with records in the checkpoint file.  For
-each client, if the matching entry, whose
-definition is given below, is found, it
-assumes the first SIZE bytes has been written
-to that client so can be skipped at this
-time.  It may still be written if there are
-other clients behind it (i.e., have smaller
-SIZE values). It never happens that a single
-byte range is written in some clients but not
-in others unless there is a fault.
+  (iii) --resume (without --ignore_timestamp)
+  SHOULD BE always safe, but in my
+  experiences so far, is overly conservative
+  for reasons I do not yet understand; there
+  are situations where it misses an
+  opportunity to skip blocks.  It happens
+  that it says it would start from the offset
+  0 (beginning), even though all clients have
+  progressed in the last invocation.  So at
+  this point the choice between with and
+  without --ignore_timestamp is on you.
+  Without it, you might have to lose all the
+  work you have done.  With
+  --ignore_timestamp, you must understand
+  when it is safe and guarantee that it is.
 
-Note that we cannot make any assumption about
-the identities and the states of the
-participating machines across different
-invocations of outbreak2 command.  It may be
-the case the clients are partly replaced
-between two successive invocations.  In fact,
-it is quite common that physically different
-machines are assigned the same IP address at
-different invocations; physically different
-disks are assigned the same path name (e.g.,
-/dev/sda) at different invocations;
-physically the same disk may be modified
-between invocations.  To safely detect if a
-client participating in the current
-invocation of outbreak2 has a matching record
-in the checkpoint file, it uses the triple
-(addrs, path, mtime) as the key.  In other
-words, if a client participating this time
-has an IP address A, is going to write to a
-file of absolute path P, and P's mtime is T,
-it checks if a record satisfying ADDRS=A,
-PATH=P, and MTIME=T exist in the checkpoint
-file, and if so, it reads the SIZE column of
-that record and assumes the first SIZE bytes
-of the current client have already been
-written and can be skipped.
+  Here is how --resume and --ignore_timestamp
+  work.
+
+  Copying the entire drive consists of
+  copying blocks.  All clients are engaged in
+  copying the same block at the same time.
+  Whenever a single block has been written to
+  all working clients, outbreak2 will record
+  that fact to a checkpoint file
+  (ckpt.db). It is a simple human-readable
+  text file and its each record looks like:
+
+    addrs|path|mtime|size
+
+  ADDRS column is the list of IP addresses of
+  the client, as obtained by hostname -I
+  command (there may be multiple IP
+  addresses).  PATH is the canonical absolute
+  path name of the destination file, as
+  obtained by os.path.realpath method of
+  python module.  MTIME is the modification
+  time of the destination file as obtained by
+  os.stat(..).st_mtime.  SIZE is the number
+  of bytes that have been successfully
+  written.
+
+  Whenever a single block has been written to
+  all clients, outbreak2 will update the
+  checkpoint file.  In this process, the pair
+  (addrs, path) is used as a key.  MTIME is
+  the modification time of the destination
+  file as reported by the client.  To
+  summarize, each record indicates how far
+  each client (identified as the addresses
+  reported by hostname -I) has gone, along
+  with the modification time corresponding to
+  the last block.
+
+  When outbreak2 is executed with --resume
+  option, it consults the checkpoint file and
+  matches clients that participate this time
+  with records in the checkpoint file.  For
+  each client, if there is a matching record,
+  whose definition is given below, it assumes
+  the first SIZE bytes has been written to
+  that client so can be skipped at this time.
+
+  When it looks up the checkpoint file for a
+  match, it uses the triple ADDRS, PATH,
+  MTIME as the key if --ignore_timestamp is
+  NOT given.  If it IS given, it uses the
+  pair ADDRS, PATH as the key (ignoring the
+  MTIME field).
+
+  Note that we cannot assume IP ADDRS and
+  PATH reliably identify the physical machine
+  and physical drive; even if there is a
+  record having a matching ADDRS and PATH
+  fields, there is no guarantee that it is
+  referring to the same physical drive of the
+  same physical machine as the one we worked
+  on the last time.  Even if it is indeed the
+  same physical drive, it may have been
+  written to (thus invalidated) for other
+  reasons.  To detect such cases, we compare
+  the MTIME field of the drive we are going
+  to work and the MTIME in the checkpoint
+  file.  If the triple matches, it will be
+  safe in practically all cases, unless I am
+  missing something.
+
+  Ideally you never want to use
+  --ignore_timestamp.  In my experiences,
+  however, it happens that MTIME at the time
+  of the second invocation is somehow changed
+  from the value recorded in the checkpoint.
+  I don't know how this happens, but until
+  the issue is fully resolved, you may want
+  to use --ignore_timestamp at your own risk.
+
+  Finally, now you probably understand when
+  --ignore_timestamp is safe.  It is safe
+  when nothing happens that invalidates the
+  binding between ADDRS and the physical
+  machine or the binding between the PATH and
+  the physical drive and the physical drive
+  is not modified in any way.
+
+DISK COPY VS. FILE COPY:
+
+  Although its primary purpose is to copy an
+  entire disk, which is a special (device)
+  file, it can also be used to copy a regular
+  file.  You may simply give regular file
+  names as the source and destination files.
+  e.g.,
+
+  ./outbreak2 big_file_src big_file_dst
+
+or
+
+  ./outbreak2 big_file 
+
+the latter of which is equivalent to 
+
+  ./outbreak2 big_file big_file 
+
+  This feature is mainly used for debugging
+  and testing this program (you don't want to
+  copy /dev/sda each time you test it, do
+  you?).
+
+  Care must be taken how to interpret the
+  relative path name given as the destination
+  file.  A unique directory is created for
+  each client and it is used for the base
+  path of relative path names; thus, the
+  relative destination path becomes unique
+  EVEN IF SOME CLIENTS RUN on the same
+  machine.
+
+LOCAL TEST MODE: 
+
+  To facilitate debugging and testing, it has
+  a --mode=local option.  When --mode=local
+  is given, all clients run on the same
+  machine.  See the description of --mode
+  option below.
+
 
 OPTIONS:
 
@@ -502,39 +580,46 @@ status.pid : a file containing the pid of the
    as status.svg
 
 EXAMPLES:
+(0) ./outbreak2 -n
+
+  shows you what is going to happen and exits
+  without actually doing work. Always do this
+  before you actually go ahead.
+
 (1) ./outbreak2 
 
-copies /dev/sda of the local machine into
-/dev/sda of all ping-reachable machines
-having IP addresses 10.0.3.100-10.0.3.199.
-Make sure the drive you want to copy is
-/dev/sda.  The IP address range is hardwired
-in ping.mk in this directory.  Modify ping.mk
-when you want to change this behavior.
+  copies /dev/sda of the local machine into
+  /dev/sda of all ping-reachable machines
+  having IP addresses 10.0.3.100-10.0.3.199.
+  Make sure the drive you want to copy is
+  /dev/sda.  The IP address range is
+  hardwired in ping.mk in this directory.
+  Modify ping.mk when you want to change this
+  behavior.
 
 (2) ./outbreak2 /dev/sdb
 
-ditto, but copies /dev/sdb instead of /dev/sda.
-Use this when you know the drive you want to
-copy is /dev/sdb.
+  ditto, but copies /dev/sdb instead of
+  /dev/sda.  Use this when you know the drive
+  you want to copy is /dev/sdb.
 
 (3) ./outbreak2 /dev/sdb /dev/sda
 
-copies the /dev/sdb of the local machine to
-/dev/sda of client machines.
+  copies the /dev/sdb of the local machine to
+  /dev/sda of client machines.
 
 (4) ./outbreak2 --resume 
 
-resumes copying from the point where the
-first fault occurred in the last run.  See
-BEHAVIOR OF --RESUME OPTION above for
-details.
+  resumes copying from the point where the
+  first fault occurred in the last run.  See
+  BEHAVIOR OF --RESUME OPTION above for
+  details.
 
 (5) ./outbreak2 --mode local foo bar
 
-copies FOO under the current directory to
-/tmp/USER/outbreak/{0,1,2}/bar.  Non-existing
-directories are created.
+  copies FOO under the current directory to
+  /tmp/USER/outbreak/{0,1,2}/bar.
+  Non-existing directories are created.
 
 EOF
 }
