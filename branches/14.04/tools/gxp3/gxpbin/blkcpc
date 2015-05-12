@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.10 2015/05/11 14:56:28 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.11 2015/05/12 04:03:55 ttaauu Exp $
 # $Name:  $
 #
 
@@ -745,11 +745,10 @@ class ring_connector:
         up_fd = self.up_fd
         down_fd = self.down_fd
         assert up_fd != -1
-        assert down_fd != -1
         if up_fd is not None:
             # position the read-cursor
             os.lseek(up_fd, begin_offset, os.SEEK_SET)
-        if down_fd is not None:
+        if down_fd is not None and down_fd != -1:
             if self.opts.trunc:
                 os.ftruncate(down_fd, begin_offset)
             # position the write-cursor
@@ -791,7 +790,7 @@ class ring_connector:
                     Es("%s : %s : failed to send payload\n" 
                        % (progname, self.gupid))
                     return -1
-            if down_fd is not None:
+            if down_fd is not None and down_fd != -1:
                 # write to the file
                 if self.write_all(down_fd, X) == -1:
                     Es("%s : %s : failed to write payload\n" 
@@ -806,6 +805,11 @@ class ring_connector:
         else:
             # try to close it. 
             # I succeeded when I successfully close it
+            if down_fd == -1:
+                # error during close; msg must have been written
+                Es("%s : %s : did not write-open the file; how could I close it?\n" 
+                   % (progname, self.gupid))
+                return -1
             if self.safe_close(down_fd) == -1:
                 # error during close; msg must have been written
                 Es("%s : %s : failed to close the file\n" 

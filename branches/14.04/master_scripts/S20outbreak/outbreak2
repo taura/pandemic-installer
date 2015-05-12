@@ -917,6 +917,11 @@ check_continue() {
 	echo "outbreak: the source failed. bail out."
 	return 1
     fi
+    # no clients left
+    if [ ${nc} -lt 1 ]; then
+	echo "outbreak: no clients left. bail out."
+	return 1
+    fi
 
     # if the number of clients is larger than
     # the preset threshold, keep going
@@ -992,7 +997,7 @@ copy_block() {
     # remember the set of clients still engaged.
     # this is necessary to change status on the
     # failed clients
-    gxpc --timeout 3.0 ping > /dev/null
+    nc=$(gxpc --timeout 3.0 ping | wc -l)
     gxpc savemask before
 
     if [ "${disk_check}" = 1 ] ; then
@@ -1006,7 +1011,37 @@ copy_block() {
 	do_write=1
     fi
 
-    max_retries=2		# we try (max_retries + 1) times
+    # managing clients in the presence of 
+    # network/disk failures.
+    # the basic command we use to broadcast
+    # a block is
+    #  mw --master blkcpm blkcpc ... ...
+    # when some clients fail to accomplish
+    # the above task, we want to detect and 
+    # remove broken clients from further 
+    #
+    # participation.
+    # a basic problem is that, since clients
+    # collaborate together to broadcast a block,
+    # if there is ANY broken client, nobody will
+    # succeed. in other words, the status of the 
+    # above command is almost all-or-nothing;
+    # either everybody succeeds or nobody does.
+    # the latter does NOT mean all clients are 
+    # broken. to correctly identify broken clients,
+    # we need to run a command that can independently
+    # succeed yet can accurately predict the health
+    # of each.  to this end, we do the following.
+    #
+    # ping ; drop unresponsive clients ;
+    # copy ; if all reponsive clients succeed, done ;
+    # repeat:
+    #  ping ; drop unresponsive clients again ; 
+    #  disk_check ; each client independently writes some junks to the disk ;
+    #    drop clients that failed to finish within a time out ;
+    #  copy ; if all reponsive clients succeed, done ;
+
+    max_retries=1		# we try (max_retries + 1) times
     for i in $(seq 0 ${max_retries}); do
 	if [ $i -gt 0 ] ; then
 	    echo "outbreak: retry with reachable processes (try $i, max tries = ${max_retries})."
@@ -1014,16 +1049,28 @@ copy_block() {
 	fi
 	# ping with timeout 3 sec
 	n_ping_ok=$(gxpc --timeout 3.0 ping | wc -l)
-	if [ $i -gt 0 ] ; then
+	if [ "${n_ping_ok}" -lt "${nc}" ] ; then
+	    echo "outbreak: ****** only ${n_ping_ok} process responded (out of ${nc})"
+	elif [ $i -gt 0 ] ; then
 	    echo "outbreak: ${n_ping_ok} processes (source or clients) responded"
 	fi
 	if [ "${n_ping_ok}" = "0" ]; then break ; fi
 	# filter out unreachable guys
 	gxpc smask
-	if [ $i -gt 0 ] ; then
-	    echo "outbreak: check disk writes"
+	if [ $i = 0 ] ; then
+	    # no disk check in the first iteration
+	    n_disk_ok=$((${n_ping_ok} - 1))
+	else
+	    echo "outbreak: ****** check disk health of clients ... "
 	    n_disk_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --pkt_sz ${pkt_sz} --creat ${creat} --trunc ${trunc} --read_fault ${read_fault} --send_fault ${send_fault} --recv_fault ${recv_fault} --write_fault ${write_fault} --close_fault ${close_fault} --closesocket_fault ${closesocket_fault} --block_on_fault ${block_on_fault} --min_receivers 0 --write 1 --transfer 0 --range ${a}:${b} ${src_file} ${dst_file}" | grep DONE | wc -l)
-	    echo "outbreak: ${n_disk_ok} processes have OK disks"
+
+	    n_failed=$((${n_ping_ok} - ${n_disk_ok} - 1))
+	    if [ "${n_failed}" -gt "0" ]; then
+		echo "outbreak: ****** only ${n_disk_ok} processes have a working disk (out of $((${n_ping_ok} - 1)))"
+		echo "outbreak: ${dst_file} has suspicious sectors in ${a}:${b}"
+	    else 
+		echo "outbreak: all ${n_disk_ok} process(es) appear to have a working disk"
+	    fi
 	    if [ "${n_disk_ok}" = "0" ]; then break ; fi
 	    gxpc smask
 	fi
@@ -1031,7 +1078,11 @@ copy_block() {
 	# blkcpc prints "OK" when done and we count the 
 	# number of OK lines (TODO: should be made more robust)
 	if [ "${verbosity}" -ge 1 ]; then
-	    echo "outbreak: copy range ${a}:${b}"
+	    if [ $i = 0 ] ; then
+		echo "outbreak: copy range ${a}:${b} ..."
+	    else 
+		echo "outbreak: ****** retry to copy range ${a}:${b} among clients with working disks ..."
+	    fi
 	fi
 	if [ "${verbosity}" -ge 2 ]; then
 	    set -x
@@ -1040,12 +1091,14 @@ copy_block() {
 	n_copy_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --pkt_sz ${pkt_sz} --creat ${creat} --trunc ${trunc} --read_fault ${read_fault} --send_fault ${send_fault} --recv_fault ${recv_fault} --write_fault ${write_fault} --close_fault ${close_fault} --closesocket_fault ${closesocket_fault} --block_on_fault ${block_on_fault} --min_receivers 0 --write ${do_write} --transfer ${do_trans} --range ${a}:${b} ${src_file} ${dst_file}" | grep DONE | wc -l)
 	set +x
 
-	n_failed=$((${n_ping_ok} - ${n_copy_ok} - 1))
+	n_failed=$((${n_disk_ok} - ${n_copy_ok}))
 	if [ "${n_failed}" = "0" ]; then
-	    # echo "great, no processes failed. move on."
+	    if [ $i -gt 0 ] ; then
+		echo "outbreak: all ${n_copy_ok} processes succeeded"
+	    fi
 	    break
 	else 
-	    echo "outbreak: ${n_failed} processes failed."
+	    echo "outbreak: ****** only ${n_copy_ok} processes succeeded (out of ${n_disk_ok})"
 	fi
     done
     # get the set of clients that have suceeded
@@ -1066,6 +1119,9 @@ copy_block() {
     # we are all set. get back to the set that has succeeded
     gxpc restoremask after
 }
+
+
+
 
 
 main() {
