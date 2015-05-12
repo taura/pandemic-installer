@@ -843,7 +843,7 @@ get_offset_from_checkpoint() {
     # it immediately prints 0 and exits.  If all triples
     # are found, it prints the minimum of the values 
     # found in SIZE column of the database.
-    if [ "ignore_timestamp" = 1 ]; then
+    if [ "${ignore_timestamp}" = 1 ]; then
 	op=min_offset_ignore_ts
     else
 	op=min_offset
@@ -906,7 +906,10 @@ check_continue() {
     nc=$(gxpc -G ${src_gupid} ping | wc -l)
 
     if [ "${verbosity}" -ge 1 ]; then
-	echo "outbreak: ${ns} source, ${nc}/${n_clients} clients, ${sz_done}/${sz_total} ($((${sz_done} * 100 / ${sz_total}))% done)" 
+	prog=$((${sz_done} * 10000 / ${sz_total}))
+	px=$((${prog} / 100))
+	py=$((${prog} % 100))
+	echo "outbreak: ${ns} source, ${nc}/${n_clients} clients, ${sz_done}/${sz_total} (${px}.${py}% done)" 
     fi
 
     # if the source has gone, no way to proceed
