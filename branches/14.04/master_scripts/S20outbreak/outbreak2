@@ -49,6 +49,7 @@ never_quit_above=100
 # beginning at each time). 
 #
 resume=0
+ignore_timestamp=0
 
 #
 # verify after writes (not implemented yet)
@@ -150,6 +151,7 @@ usage() {
     echo "  -h,--help"
     echo "  --long_help"
     echo "  --resume"
+    echo "  --ignore_timestamp"
     echo "  --verify"
     echo "  --disk_check"
     echo "  --net_check"
@@ -549,7 +551,7 @@ EOF
 # will set the command line of this process that can be
 # easily parsed.
 #
-eval set -- $(getopt -o "hnf" --long help,long_help,force,dryrun,resume,verify,disk_check,net_check,no_wallpaper,blk_sz:,pkt_sz:,timeout:,never_quit_above:,mode:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
+eval set -- $(getopt -o "hnf" --long help,long_help,force,dryrun,resume,ignore_timestamp,verify,disk_check,net_check,no_wallpaper,blk_sz:,pkt_sz:,timeout:,never_quit_above:,mode:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
 
 parse_args() {
     # the command line has been canonicalized, so we simply
@@ -586,6 +588,10 @@ parse_args() {
 		;;
 	    --resume)
 		resume=1
+		shift 1
+		;;
+	    --ignore_timestamp)
+		ignore_timestamp=1
 		shift 1
 		;;
 	    --verify)
@@ -831,7 +837,14 @@ get_offset_from_checkpoint() {
     # it immediately prints 0 and exits.  If all triples
     # are found, it prints the minimum of the values 
     # found in SIZE column of the database.
-    gxpc -G ${src_gupid} e "echo \$(python -c 'import os,sys,stat; ip=sys.argv[1]; f=sys.argv[2]; print \"%s|%s|%f\" % (ip, os.path.realpath(f), os.stat(f).st_mtime)' \"\$(hostname -I)\" ${dst_file})" | ${this_dir}/checkpoint.py min_offset ${ckpt_db}
+    if [ "ignore_timestamp" = 1 ]; then
+	op=min_offset_ignore_ts
+    else
+	op=min_offset
+    fi
+    set -x
+    gxpc -G ${src_gupid} e "echo \$(python -c 'import os,sys,stat; ip=sys.argv[1]; f=sys.argv[2]; os.path.exists(f) and sys.stdout.write(\"%s|%s|%f\" % (ip, os.path.realpath(f), os.stat(f).st_mtime))' \"\$(hostname -I)\" ${dst_file})" | ${this_dir}/checkpoint.py ${op} ${ckpt_db}
+    set +x
 }
 
 #
