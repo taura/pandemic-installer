@@ -87,6 +87,7 @@ mode=production
 # data and write junk data to disks
 #
 disk_check=0
+net_check=0
 
 #
 # number of clients when mode=local
@@ -720,10 +721,15 @@ parse_args() {
 
 print_args() {
     echo resume="${resume}"
+    echo ignore_timestamp="${ignore_timestamp}"
     echo verify="${verify}"
     echo creat="${creat}"
     echo trunc="${trunc}"
+    echo disk_check="${disk_check}"
+    echo net_check="${net_check}"
+    echo wallpaper="${wallpaper}"
     echo blk_sz="${blk_sz}"
+    echo pkt_sz="${pkt_sz}"
     echo timeout="${timeout}"
     echo never_quit_above="${never_quit_above}"
     echo mode="${mode}"
