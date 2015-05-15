@@ -993,7 +993,7 @@ check_continue() {
     if [ "${verbosity}" -ge 1 ]; then
 	prog=$((${sz_done} * 10000 / ${sz_total}))
 	px=$((${prog} / 100))
-	py=$((${prog} % 100))
+	py=$(printf "%02d" $((${prog} % 100)))
 	echo "outbreak: ${ns} source, ${nc}/${n_clients} clients, ${sz_done}/${sz_total} (${px}.${py}% done)" 
     fi
 
@@ -1314,7 +1314,14 @@ main() {
 	fi
 	# real work. copy bytes a..b of the file
 	b=$((${a} + ${blk_sz}))
-	copy_block ${src_file} ${dst_file} ${a} ${b} .
+	if [ "${b}" -gt "${sz}" ]; then b=${sz}; fi
+
+	# experiment copying in the reverse direction
+	aa=$((${sz} - ${a}))
+	bb=$((${sz} - ${b}))
+
+	copy_block ${src_file} ${dst_file} ${a} ${b}
+	## copy_block ${src_file} ${dst_file} ${bb} ${aa}
 	a=${b}
     done
     nc=$(gxpc -G ${src_gupid} ping | wc -l)
