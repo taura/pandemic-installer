@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.11 2015/05/12 04:03:55 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/blkcpc,v 1.12 2015/05/15 05:07:27 ttaauu Exp $
 # $Name:  $
 #
 
@@ -951,7 +951,7 @@ firewall between hosts for now.
                 "%d bytes (%.3f MB/sec)\n" % \
                 (progname, self.gupid, t1 - t0, t2 - t1, op,
                  end - begin,
-                 (end - begin) / (1024.0 * 1024.0 * (t2 - t1)))))
+                 (end - begin) / (1024.0 * 1024.0 * (t2 - t0)))))
         if self.down_fd is not None or (self.opts.write == 0 and self.exec_idx != self.src_idx):
             Ws("%s : DONE\n" % self.gupid)
         return 0
