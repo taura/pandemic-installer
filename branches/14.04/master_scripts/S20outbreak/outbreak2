@@ -792,6 +792,7 @@ parse_args() {
     else
 	creat=1
 	trunc=1
+	#trunc=0
     fi
 
     # make src_file absolute, so that client 0 can find
@@ -1076,8 +1077,10 @@ copy_stuff() {
 copy_block() {
     src_file=$1
     dst_file=$2
-    a=$3			# from offset
-    b=$4			# to offset
+    #from_offs=$3			# from offset
+    #to_offs=$4			# to offset
+    from_offs=$((${sz} - $4))			# from offset
+    to_offs=$((${sz} - $3))			# to offset
 
     # remember the set of clients still engaged.
     # this is necessary to change status on the
@@ -1147,12 +1150,12 @@ copy_block() {
 	    n_disk_ok=$((${n_ping_ok} - 1))
 	else
 	    echo "outbreak: ****** check disk health of clients ... "
-	    n_disk_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --pkt_sz ${pkt_sz} --creat ${creat} --trunc ${trunc} --read_fault ${read_fault} --send_fault ${send_fault} --recv_fault ${recv_fault} --write_fault ${write_fault} --close_fault ${close_fault} --closesocket_fault ${closesocket_fault} --block_on_fault ${block_on_fault} --min_receivers 0 --write 1 --transfer 0 --range ${a}:${b} ${src_file} ${dst_file}" | grep DONE | wc -l)
+	    n_disk_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --pkt_sz ${pkt_sz} --creat ${creat} --trunc ${trunc} --read_fault ${read_fault} --send_fault ${send_fault} --recv_fault ${recv_fault} --write_fault ${write_fault} --close_fault ${close_fault} --closesocket_fault ${closesocket_fault} --block_on_fault ${block_on_fault} --min_receivers 0 --write 1 --transfer 0 --range ${from_offs}:${to_offs} ${src_file} ${dst_file}" | grep DONE | wc -l)
 
 	    n_failed=$((${n_ping_ok} - ${n_disk_ok} - 1))
 	    if [ "${n_failed}" -gt "0" ]; then
 		echo "outbreak: ****** only ${n_disk_ok} processes have a working disk (out of $((${n_ping_ok} - 1)))"
-		echo "outbreak: ${dst_file} has suspicious sectors in ${a}:${b}"
+		echo "outbreak: ${dst_file} has suspicious sectors in ${from_offs}:${to_offs}"
 	    else 
 		echo "outbreak: all ${n_disk_ok} process(es) appear to have a working disk"
 	    fi
@@ -1164,16 +1167,16 @@ copy_block() {
 	# number of OK lines (TODO: should be made more robust)
 	if [ "${verbosity}" -ge 1 ]; then
 	    if [ $i = 0 ] ; then
-		echo "outbreak: copy range ${a}:${b} ..."
+		echo "outbreak: copy range ${from_offs}:${to_offs} ..."
 	    else 
-		echo "outbreak: ****** retry to copy range ${a}:${b} among clients with working disks ..."
+		echo "outbreak: ****** retry to copy range ${from_offs}:${to_offs} among clients with working disks ..."
 	    fi
 	fi
 	if [ "${verbosity}" -ge 2 ]; then
 	    set -x
 	fi
 
-	n_copy_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --pkt_sz ${pkt_sz} --creat ${creat} --trunc ${trunc} --read_fault ${read_fault} --send_fault ${send_fault} --recv_fault ${recv_fault} --write_fault ${write_fault} --close_fault ${close_fault} --closesocket_fault ${closesocket_fault} --block_on_fault ${block_on_fault} --min_receivers 0 --write ${do_write} --transfer ${do_trans} --range ${a}:${b} ${src_file} ${dst_file}" | grep DONE | wc -l)
+	n_copy_ok=$(gxpc --timeout ${timeout} mw --master blkcpm "blkcpc --pkt_sz ${pkt_sz} --creat ${creat} --trunc ${trunc} --read_fault ${read_fault} --send_fault ${send_fault} --recv_fault ${recv_fault} --write_fault ${write_fault} --close_fault ${close_fault} --closesocket_fault ${closesocket_fault} --block_on_fault ${block_on_fault} --min_receivers 0 --write ${do_write} --transfer ${do_trans} --range ${from_offs}:${to_offs} ${src_file} ${dst_file}" | grep DONE | wc -l)
 	set +x
 
 	n_failed=$((${n_disk_ok} - ${n_copy_ok}))
@@ -1316,12 +1319,7 @@ main() {
 	b=$((${a} + ${blk_sz}))
 	if [ "${b}" -gt "${sz}" ]; then b=${sz}; fi
 
-	# experiment copying in the reverse direction
-	aa=$((${sz} - ${a}))
-	bb=$((${sz} - ${b}))
-
 	copy_block ${src_file} ${dst_file} ${a} ${b}
-	## copy_block ${src_file} ${dst_file} ${bb} ${aa}
 	a=${b}
     done
     nc=$(gxpc -G ${src_gupid} ping | wc -l)
