@@ -1135,9 +1135,9 @@ copy_block() {
 	# ping with timeout 3 sec
 	n_ping_ok=$(gxpc --timeout 3.0 ping | wc -l)
 	if [ "${n_ping_ok}" -lt "${nc}" ] ; then
-	    echo "outbreak: ****** only ${n_ping_ok} process responded (out of ${nc})"
+	    echo "outbreak: ****** only ${n_ping_ok} process(es) responded (out of ${nc})"
 	elif [ $i -gt 0 ] ; then
-	    echo "outbreak: ${n_ping_ok} processes (source or clients) responded"
+	    echo "outbreak: ${n_ping_ok} process(es) (source or clients) responded"
 	fi
 	if [ "${n_ping_ok}" = "0" ]; then break ; fi
 	# filter out unreachable guys
@@ -1293,15 +1293,18 @@ main() {
     fi
 
     # keep track of time (+%s prints seconds since epoch)
-    start_time=$(date +%s)
+    # start_time=$(date +%s)
+    start_time=$(date +%s%N)	# seconds+nanoseconds
 
     a=${start_offset}
     # now the real work begins!
     while [ ${a} -lt ${sz} ]; do
 	# show current time and seconds since start
-	now=$(date +%s)
-	sec_since_start=$((${now} - ${start_time}))
-	echo "outbreak: $(date +%H:%M:%S) (${sec_since_start} sec since start)"
+	#now=$(date +%s)
+	now=$(date +%s%N)
+	sec_since_start=$(((${now} - ${start_time}) / 1000000000))
+	msec=$(((${now} - ${start_time}) % 1000000000 / 1000000))
+	echo "outbreak: $(date +%H:%M:%S) (${sec_since_start}.${msec} sec since start)"
 	# judge if we should continue or bail out
 	if ! check_continue ${a} ${sz} ${n_clients}; then
 	    if [ "${wallpaper}" = 1 ]; then
