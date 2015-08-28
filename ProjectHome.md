@@ -1,0 +1,1 @@
+Pandemic installer clones an entire hard disk of one PC to many others.  With this tool, you can create a custom CD or USB drive which can then boot your PC as a "master"; you can then connect many PCs to the same network and boot them via network.  Now, with a single command, you can copy the entire hard disk of the master to all of them.
