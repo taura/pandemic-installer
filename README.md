@@ -1,0 +1,139 @@
+
+# GigHub 
+
+	https://github.com/taura/pandemic-installer
+
+# What is this? 
+
+This is a toolkit to make a massive installation server that copies
+the entire hard disk of a master PC to many client PCs.
+
+# How it basically works?
+
+The master installer boots from a USB stick or DVD, which this tool
+helps you make, and becomes a master.  The master can boot diskless
+clients connected to the same network as the master, using network
+boot.  The tool helps you make a customized USB stick or DVD from the
+regular Ubuntu installation live DVD; when you boot the master with the
+USB stick or DVD and then boot clients from the network, the master is
+able to SSH these clients.  Thus, the master SSH them, send the entire
+contents of its hard disk to clients.
+
+# I'm impatient, how to use it? 
+
+Prerequisites:
+
+ * The master PC : any PC that becomes a master
+
+ * Patient PCs : any number of PCs you want to clone the master's HDD
+       to; Obviously, the patient PCs must have an HDD that is at
+       least as large as the master's.  Beyond that there shouldn't be
+       any requirement, but in practice the best bet is to have a
+       master PC and clients of the same model; we have only tested in
+       this configuration.
+
+ * A switch connecting them : this network must be private to the
+       master and clients, in the sense that there must be no other
+       DHCP servers running (as the master takes over this role) and
+       there must be no other PCs that might be confused by the DHCP
+       server run by the master
+
+ * Work PC : a linux PC on which you convert a regular Ubuntu
+    installer image into the pandemic master DVD or USB stick.
+    it will be your laptop or a desktop.
+
+ * a USB stick or an empty DVD to burn the customized live DVD to; A
+    USB stick must be formatted by FAT.  This tool does not
+    automatically format it; use disk utility GUI or a mkfs for it.
+
+Requirements on the work PC : it depends on the following tools. 
+
+ * squashfs-tools
+ * syslinux
+
+(todo: embedding syslinux tarball makes it more user friendly?)
+
+Step 1: make a customized USB stick
+
+This step should be done on your Linux, "Work PC"
+
+  * download Ubuntu live installer DVD image 
+     (e.g., ubuntu-12.10-desktop-amd64.iso)
+
+  * put it in your current directory and run
+
+     sudo make -f make_pandemic.mk usb
+
+  with luck, this will create /tmp/root/custom_live/edit 
+  directory that holds an entire content that will be burned
+  either to DVD or USB
+
+   (todo: the reason why we need sudo here is it uses
+    mount, umount, and apt-get to the chrooted file system.
+    may be safer to run only them as root?)
+
+  * if this succeeds, plug a USB stick in your computer; chances are
+  it is already FAT-formatted (if it is a fresh USB stick just
+  purchased), and automatically mounted once you plug it; then just go
+  ahead. otherwise you must manually format it and mount it.  Use GUI
+  tool (disk utility) or CUI (fdisk and mkfs).  When you are ready, burn the
+  file system into USB by :
+
+```
+     sudo make -f make_pandecmi.mk burn_usb -n   # check what will happen
+     sudo make -f make_pandemic.mk burn_usb      # go!
+```
+
+  Since it wipes out the entire drive, I will strongly recommend you
+  to do the first command (-n option) to see what will happen.
+  See the message displayed and make sure the system correctly
+  guesses the device name (e.g., /dev/sdc), parition name (e.g.,
+  /dev/sdc1), and the mount point (e.g., /media/my_usb), of the USB
+  stick.  
+
+Altenatively, you can make an ISO image which you can then burn to a
+physical DVD media.  This is especially convenient if your master is a
+virtual machine, for which you can boot from the ISO image without a
+physical DVD media.  For that,
+
+```
+     sudo make -f make_pandemic.mk iso
+```
+
+Step 2: boot the master PC with the USB stick (or DVD).
+
+ * Plug the USB stick into the master PC
+ * Plug the master PC to the network switch 
+ * Power on the master PC
+
+If it insists booting from an intrenal HDD or other devices, check its
+BIOS setting.  Many PCs enter boot device selection menu when you
+press F12 just after power on.
+
+With luck, the master PC boots from USB and displays a CUI boot menu.
+Press enter and the master PC will soon display an image similar to
+regular Ubuntu Live CD.  It should show a "master" label on the desktop.
+
+Step 3: plug any number of patient PCs to the network switch and boot them
+
+Make sure they boot from the network (PXE boot).  This could be
+configured from BIOS setup menu (e.g., by pressing 'F2' key) or one
+time boot selection menu (e.g., by pressing 'F12' key).  They should
+also display an image similar to regular Ubuntu Live CD, with "patient"
+label on the desktop.
+
+Step 4: after successfully booting all patient PCs, go back to the 
+master PC and then:
+
+  (a) open terminal
+  (b) 
+     $ sudo su -
+     # ./outbreak
+
+the outbreak command will start copying the HDD of the master into all
+patients.
+
+The process takes time proportional to the size of the HDD.  It will take
+hours for > 100GB HDDs.  
+
+Be patient and have a good luck!
