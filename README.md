@@ -21,7 +21,7 @@ contents of its hard disk to clients.
 
 # I'm impatient, how to use it? 
 
-Prerequisites:
+## Prerequisites:
 
  * The master PC : any PC that becomes a master
 
@@ -46,14 +46,16 @@ Prerequisites:
     USB stick must be formatted by FAT.  This tool does not
     automatically format it; use disk utility GUI or a mkfs for it.
 
-Requirements on the work PC : it depends on the following tools. 
+## Requirements on the work PC : it depends on the following tools. 
 
  * squashfs-tools
  * syslinux
 
 (todo: embedding syslinux tarball makes it more user friendly?)
 
-Step 1: make a customized USB stick
+## Step 1: 
+
+Make a customized USB stick
 
 This step should be done on your Linux, "Work PC"
 
@@ -100,7 +102,9 @@ physical DVD media.  For that,
      sudo make -f make_pandemic.mk iso
 ```
 
-Step 2: boot the master PC with the USB stick (or DVD).
+## Step 2: 
+
+Boot the master PC with the USB stick (or DVD).
 
  * Plug the USB stick into the master PC
  * Plug the master PC to the network switch 
@@ -114,7 +118,9 @@ With luck, the master PC boots from USB and displays a CUI boot menu.
 Press enter and the master PC will soon display an image similar to
 regular Ubuntu Live CD.  It should show a "master" label on the desktop.
 
-Step 3: plug any number of patient PCs to the network switch and boot them
+## Step 3: 
+
+Plug any number of patient PCs to the network switch and boot them
 
 Make sure they boot from the network (PXE boot).  This could be
 configured from BIOS setup menu (e.g., by pressing 'F2' key) or one
@@ -122,8 +128,9 @@ time boot selection menu (e.g., by pressing 'F12' key).  They should
 also display an image similar to regular Ubuntu Live CD, with "patient"
 label on the desktop.
 
-Step 4: after successfully booting all patient PCs, go back to the 
-master PC and then:
+## Step 4: 
+
+After successfully booting all patient PCs, go back to the master PC and then:
 
   (a) open terminal
   (b) 
