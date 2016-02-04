@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/bcp,v 1.11 2013/02/08 13:53:47 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/bcp,v 1.12 2015/05/08 09:01:30 ttaauu Exp $
 # $Name:  $
 #
 
@@ -315,8 +315,9 @@ class ring_connector:
                 Es("%s : warning: %d receivers\n" % \
                    (self.host, n_receivers))
             else:
-                Es("%s : from %s (idx=%d) to %d receivers\n" \
-                   % (self.host, src_host, self.src_idx, n_receivers))
+                if dbg>=1:
+                    Es("%s : from %s (idx=%d) to %d receivers\n" \
+                       % (self.host, src_host, self.src_idx, n_receivers))
                 
         self.n_senders = n_senders
         self.n_receivers = n_receivers
@@ -564,7 +565,7 @@ class ring_connector:
             read = read + len(X)
 
             # this one too noisy. just written data is enough
-            if 0 and self.show_progress:
+            if dbg>=3 and self.show_progress:
                 if up_fp is not None:
                     Es(("%s : read %d bytes in %.6f MB/s (cummulative : %d bytes in %.6f MB/s)\n"
                         % (self.host, len(X), len_X / MB / (t1 - t0),
@@ -590,12 +591,11 @@ class ring_connector:
                     down_fp.write(X[:l])
                 X = X[l:]
             t1 = time.time()
-            if self.show_progress:
+            if dbg>=3 and self.show_progress:
                 if self.rank != self.final_rank:
-                    if 0:               # this one is noisy too
-                        Es(("%s -> %s : sent %d bytes in %.6f MB/sec (cummulative : %d bytes in %.6f MB/s)\n"
-                            % (self.host, self.right_host, len_X, len_X / MB / (t1 - t0),
-                               written, written / MB / (t1 - T0))))
+                    Es(("%s -> %s : sent %d bytes in %.6f MB/sec (cummulative : %d bytes in %.6f MB/s)\n"
+                        % (self.host, self.right_host, len_X, len_X / MB / (t1 - t0),
+                           written, written / MB / (t1 - T0))))
                 elif down_fp is not None:
                     Es(("%s : written %d bytes in %.3f sec, throughput = %.3f MB/s\n"
                         % (self.host, written, t1 - T0, written / MB / (t1 - T0))))
@@ -786,11 +786,12 @@ firewall between hosts for now.
         t2 = time.time()
         if self.finish() == -1: return 1
         if self.rank == self.src_rank:
-            Es(("%s : %.3f sec to setup, %.3f sec to transfer " \
-                "%d bytes (%.3f MB/sec)\n" % \
-                (self.host, t1 - t0, t2 - t1,
-                 self.src_sz,
-                 self.src_sz / (1024.0 * 1024.0 * (t2 - t1)))))
+            if dbg>=1:
+                Es(("%s : %.3f sec to setup, %.3f sec to transfer " \
+                    "%d bytes (%.3f MB/sec)\n" % \
+                    (self.host, t1 - t0, t2 - t1,
+                     self.src_sz,
+                     self.src_sz / (1024.0 * 1024.0 * (t2 - t1)))))
         return 0
         
 def main():
@@ -800,6 +801,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: bcp,v $
+# Revision 1.12  2015/05/08 09:01:30  ttaauu
+# refactor blkcpc and bcp
+#
 # Revision 1.11  2013/02/08 13:53:47  ttaauu
 # added --src_idx option to bcp
 #

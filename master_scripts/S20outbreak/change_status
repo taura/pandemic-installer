@@ -1,0 +1,101 @@
+#!/bin/bash
+
+gen_svg_aux() {
+    cat <<EOF
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<svg 
+   xmlns="http://www.w3.org/2000/svg"
+   width="${width}" height="${height}"
+   viewBox="0 0 ${width} ${height}" 
+>
+<rect x="0" y="0" width="${width}" height="${height}" fill="${bg}"/>
+<text x="10" y="$((${fs} * 1))" font-size="${fs}" fill="${fg}">
+hostname: ${hostname}
+</text>
+<text x="10" y="$((${fs} * 2))" font-size="${fs}" fill="${fg}">
+IP addresses: ${addrs}
+</text>
+<text x="10" y="$((${fs} * 3))" font-size="${fs}" fill="${fg}">
+GXP_GUPID: ${gupid}
+</text>
+<text x="10" y="$((${fs} * 4))" font-size="${fs}" fill="${fg}">
+dir: ${dir}
+</text>
+<text x="10" y="$((${fs} * 5))" font-size="${fs}" fill="${fg}">
+status: ${icon}
+</text>
+<text x="10" y="$((${fs} * 6))" font-size="${fs}" fill="${fg}">
+since: ${since}
+</text>
+</svg>
+EOF
+}
+
+set_status_icon() {
+    case $1 in 
+	start) 
+	    icon="started (' ';)"
+	    fg="black"
+	    bg="#eeeeee"
+	    ;;
+	success) 
+	    icon="started (^^)/"
+	    fg="blue"
+	    bg="white"
+	    ;;
+	fail) 
+	    icon="failed (; ;)"
+	    fg="red"
+	    bg="black"
+	    ;;
+	bailout) 
+	    icon="bailed out (T T)"
+	    fg="yellow"
+	    bg="black"
+	    ;;
+	*) 
+	    icon="unknown ($1)"
+	    fg="black"
+	    bg="white"
+	    ;;
+    esac
+}
+
+gen_svg() {
+    set_status_icon $1
+    width=800
+    height=180
+    fs=30
+    hostname=$(hostname)
+    addrs="$(hostname -I)"
+    gupid="${GXP_GUPID}"
+    dir="$(pwd)"
+    since="$(date)"
+
+    gen_svg_aux
+}
+
+main() {
+    status=$1
+    status_pid=status.pid
+    status_svg=status.svg
+
+    if [ -e ${status_pid} ]; then
+	pid=$(cat ${status_pid})
+	if ps -p ${pid} > /dev/null ; then
+	    if ps -p ${pid} -o args= | grep eog > /dev/null ; then
+		kill ${pid}
+	    fi
+	fi
+	rm -f ${status_pid}
+    fi
+
+    if [ "${status}" != "quit" ] ; then
+	gen_svg ${status} > ${status_svg}
+	eog --new-instance --display=:0 ${status_svg} > /dev/null 2> /dev/null &
+	new_pid=$!
+	echo ${new_pid} > ${status_pid}
+    fi
+}
+
+main $@

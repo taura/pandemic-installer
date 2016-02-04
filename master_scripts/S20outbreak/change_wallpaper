@@ -1,30 +1,51 @@
 #!/bin/bash
 
+set -e
+
 if [ -z "$1" ]; then
 	exit 1
 fi
 
+# This part is no longer used since it does not work on Ubuntu 14.xx .
 # DBUS_SESSION_BUS_ADDRESS acquisition is implemented based on the code introduced in 
-# http://askubuntu.com/questions/135573/gconf-error-no-d-bus-daemon-running-how-to-reinstall-or-fix
-sessionfile=`find "/home/ubuntu/.dbus/session-bus/" -maxdepth 1 -type f`
-if [ -f "$sessionfile" ] ; then
-    if grep -q "^DBUS_SESSION_BUS_ADDRESS=" "${sessionfile}" ; then
-        export `grep "^DBUS_SESSION_BUS_ADDRESS=" "${sessionfile}"`
-    else
-        echo "DBUS_SESSION_BUS_ADDRESS not found in ${sessionfile}"
-        exit 1
-    fi
-else
-    echo "no session address file found in /home/ubuntu/.dbus/session-bus"
-    exit 1
-fi
+#  http://askubuntu.com/questions/135573/gconf-error-no-d-bus-daemon-running-how-to-reinstall-or-fix
+#sessionfile=`find "/home/ubuntu/.dbus/session-bus/" -maxdepth 1 -type f`
+#if [ -f "$sessionfile" ] ; then
+#    if grep -q "^DBUS_SESSION_BUS_ADDRESS=" "${sessionfile}" ; then
+#        export `grep "^DBUS_SESSION_BUS_ADDRESS=" "${sessionfile}"`
+#    else
+#        echo "DBUS_SESSION_BUS_ADDRESS not found in ${sessionfile}"
+#        exit 1
+#    fi
+#else
+#    echo "no session address file found in /home/ubuntu/.dbus/session-bus"
+#    exit 1
+#fi
+
+# On Ubuntu 14.XX, Dbus session file located in /home/ubuntu/.dbus/session-bus/ is not valid or no longer used.
+# So this script takes another approach based on the idea described in the below URL (and many other similar pages):
+#  http://ubuntuforums.org/showthread.php?t=1674957
+# Specifically, it collects candidates of the correct DBUS_SESSION_BUS_ADDRESS from environment variables of running programs,
+# and then tries to change the wallpaper with each candidates.
+
+# 1. Enumerate environment variables of all processes
+# 2. Search DBUS_SESSION_BUS_ADDRESS
+# 3. Remove duplicated lines
+# Info: http://linuxjm.sourceforge.jp/html/LDP_man-pages/man5/proc.5.html
+DBUS_ADDR_CANDS=`strings /proc/*/environ 2> /dev/null | grep DBUS_SESSION_BUS_ADDRESS | sort | uniq`
 
 IMG_DEST=/home/ubuntu/$(basename $1)
 
 cp $1 ${IMG_DEST}
 chmod 644 ${IMG_DEST}
 cd /home/ubuntu
-# How to change the wallpaper from the command-line is introduced in many websites like the URL below:
-# http://askubuntu.com/questions/66914/how-to-change-desktop-background-from-command-line-in-unity
-sudo -u ubuntu sh -c "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS} gsettings set org.gnome.desktop.background picture-uri \'file://${IMG_DEST}\'"
+
+# Try every candidates of DBUS_SESSION_BUS_ADDRESS
+for exp_str in ${DBUS_ADDR_CANDS}; do
+	export ${exp_str}
+	# echo "DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS}
+	# How to change the wallpaper from the command-line is introduced in many websites like the URL below:
+	#  http://askubuntu.com/questions/66914/how-to-change-desktop-background-from-command-line-in-unity
+	su -c "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS} gsettings set org.gnome.desktop.background picture-uri 'file://${IMG_DEST}'" ubuntu
+done
 

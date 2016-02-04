@@ -1,9 +1,5 @@
-# 
-# mess around root check, device check, vmdk creation
-#
-
 # ------------------------------------
-# make_custom_live.mk
+# make_pandemic.mk
 #  creates a custom live CD from the default CD
 # ------------------------------------
 # Need:
@@ -12,7 +8,7 @@
 #
 # Usage:
 #  1. prepare the default Ubuntu Live CD
-#    (by default, ubuntu-12.10-desktop-amd64.iso;
+#    (by default, ubuntu-14.04.2-desktop-amd64.iso;
 #     can be specified below)
 #  2. run this script on your laptop by:
 #
@@ -50,11 +46,11 @@ endif
 
 # ---------- variables you might want to specify ----------
 # (1) original image file name; absolute path or relative to current dir
-orig_iso ?= ubuntu-12.10-desktop-amd64.iso
+orig_iso ?= ubuntu-14.04.2-desktop-amd64.iso
 
 # (2) if you want to create a custom ISO image file, give its filename.
 # this MUST BE an absolute path
-cust_iso ?= $(realpath .)/ubuntu-12.10-desktop-amd64-custom.iso
+cust_iso ?= $(realpath .)/ubuntu-14.04.2-desktop-amd64-custom.iso
 
 # (3) image name of your ISO image (if you want to create one), 
 # which in practice does not matter
@@ -69,7 +65,8 @@ work_dir ?= /tmp/$(shell whoami)/custom_live
 # and its mount point
 
 usb_part ?= $(shell mount | awk '/fat/ && !/boot/ { print $$1 }')
-usb_dev  ?= $(shell mount | awk '$$1 == usb_part { print substr($$1, 1, length($$1)-1) }' usb_part=$(usb_part))
+# usb_dev  ?= $(shell mount | awk '$$1 == usb_part { print substr($$1, 1, length($$1)-1) }' usb_part=$(usb_part))
+usb_dev  ?= $(shell awk 'BEGIN { x="$(usb_part)"; sub("[0-9]", "", x); print x; }')
 usb_mnt  ?= $(shell mount | awk '$$1 == usb_part { print $$3 }' usb_part=$(usb_part))
 
 #usb_part ?= $(shell mount | awk '/fat/ { print $$1 }')
@@ -113,8 +110,8 @@ $(info mnt=$(mnt))
 $(info extract=$(extract))
 $(info custom_live_squashfs_root=$(custom_live_squashfs_root))
 $(info ******** check if the following seems correct ********)
-$(info usb_dev=$(usb_dev))
 $(info usb_part=$(usb_part))
+$(info usb_dev=$(usb_dev))
 $(info usb_mnt=$(usb_mnt))
 $(info ******************************************************)
 
@@ -126,7 +123,7 @@ all : help
 help :
 	@echo "0. install squashfs-tools and syslinux (using apt-get)"
 	@echo "1. prepare the default Ubuntu Live CD"
-	@echo "  (by default, ubuntu-12.10-desktop-amd64.iso;"
+	@echo "  (by default, ubuntu-14.04.2-desktop-amd64.iso;"
 	@echo "   can be specified below)"
 	@echo "2. run this script on your laptop by:"
 	@echo ""
@@ -263,7 +260,8 @@ $(usb_mnt)/syslinux.cfg : $(extract)/casper/filesystem.squashfs
 	[ "$(usb_mnt)" != "" ]
 	[ "$(usb_part)" != "" ]
 	@echo "checking partition $(usb_part) is a fat partition"
-	mount | grep $(usb_part) | grep fat
+#	mount | grep $(usb_part) | grep fat
+	mount | grep $(usb_dev) | grep fat
 	parted $(usb_dev) set 1 boot on
 	syslinux -i $(usb_part)
 	dd conv=notrunc bs=440 count=1 if=$(mbr_bin) of=$(usb_dev)
@@ -298,3 +296,9 @@ clean :
 make_virtualbox_bootable_usb : $(usb_vmdk)
 $(usb_vmdk) : 
 	VBoxManage internalcommands createrawvmdk -filename $(usb_vmdk) -rawdisk $(usb_dev)
+
+
+# TODO:
+# mess around root check, device check, vmdk creation
+#
+
