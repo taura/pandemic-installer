@@ -1283,7 +1283,7 @@ main() {
     if [ "${wallpaper}" = 1 ]; then
 	if ! copy_stuff ; then return 1; fi
 	if [ "$(whoami)" = "root" ]; then
-	    gxpc -G ${src_gupid} e sudo -u ubuntu sh -c '"DISPLAY=:0 xhost +"'    
+	    gxpc -G ${src_gupid} e su -c '"DISPLAY=:0 xhost +"' ubuntu
 	fi
     fi
 

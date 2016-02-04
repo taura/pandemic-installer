@@ -64,7 +64,7 @@ set_status_icon() {
 gen_svg() {
     set_status_icon $1
     width=800
-    height=180
+    height=240
     fs=30
     hostname=$(hostname)
     addrs="$(hostname -I)"
