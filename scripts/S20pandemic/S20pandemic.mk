@@ -9,7 +9,7 @@ pandemic_packages := isc-dhcp-server tftpd-hpa nfs-kernel-server syslinux
 all :
 # download tools we need in the master, but not install
 	chroot $(custom_live_squashfs_root) apt-get --force-yes -y --download-only install $(pandemic_packages)
-	chroot $(custom_live_squashfs_root) apt-get --force-yes -y install subversion
+	chroot $(custom_live_squashfs_root) apt-get --force-yes -y install git
 	chroot $(custom_live_squashfs_root) rm -rf /root/pi
 	chroot $(custom_live_squashfs_root) git clone https://github.com/taura/pandemic-installer.git /root/pi
 #	chroot $(custom_live_squashfs_root) svn checkout http://pandemic-installer.googlecode.com/svn/branches/14.04 /root/pi

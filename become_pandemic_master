@@ -84,7 +84,7 @@ pandemic_client_range="${pandemic_subnet}.100 ${pandemic_subnet}.199"
 
 # (5) distribution name; it just names the nfsroot directory.
 # otherwise it does not matter
-distro=ubuntu-14.04.2-amd64
+distro=ubuntu-14.04.3-amd64
 
 # (6) name of the nfsroot directory. 
 # in my experience, it cannot not /var directory. NFS
@@ -142,6 +142,7 @@ conf_dhcp() {
     conf=/etc/dhcp/dhcpd.conf
     bak=/tmp/dhcpd.bak
     diff=/tmp/dhcpd.diff
+    default=/etc/default/isc-dhcp-server
     # generate config file
     # only importants are
     # next-server, which says clients should contact
@@ -169,6 +170,8 @@ EOF
     fi
     # append it to the end of the original file
     cat ${bak} ${diff} > ${conf}
+    # edit default file
+    sed --in-place=.bak -e s/INTERFACES=\"\"/INTERFACES=\"eth0\"/g ${default}
     # (re)start the server
     initctl reload-configuration
     service isc-dhcp-server restart
