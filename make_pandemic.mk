@@ -8,7 +8,7 @@
 #
 # Usage:
 #  1. prepare the default Ubuntu Live CD
-#    (by default, ubuntu-14.04.2-desktop-amd64.iso;
+#    (by default, ubuntu-14.04.3-desktop-amd64.iso;
 #     can be specified below)
 #  2. run this script on your laptop by:
 #
@@ -46,11 +46,11 @@ endif
 
 # ---------- variables you might want to specify ----------
 # (1) original image file name; absolute path or relative to current dir
-orig_iso ?= ubuntu-14.04.2-desktop-amd64.iso
+orig_iso ?= ubuntu-14.04.3-desktop-amd64.iso
 
 # (2) if you want to create a custom ISO image file, give its filename.
 # this MUST BE an absolute path
-cust_iso ?= $(realpath .)/ubuntu-14.04.2-desktop-amd64-custom.iso
+cust_iso ?= $(realpath .)/ubuntu-14.04.3-desktop-amd64.iso
 
 # (3) image name of your ISO image (if you want to create one), 
 # which in practice does not matter
@@ -123,7 +123,7 @@ all : help
 help :
 	@echo "0. install squashfs-tools and syslinux (using apt-get)"
 	@echo "1. prepare the default Ubuntu Live CD"
-	@echo "  (by default, ubuntu-14.04.2-desktop-amd64.iso;"
+	@echo "  (by default, ubuntu-14.04.3-desktop-amd64.iso;"
 	@echo "   can be specified below)"
 	@echo "2. run this script on your laptop by:"
 	@echo ""
