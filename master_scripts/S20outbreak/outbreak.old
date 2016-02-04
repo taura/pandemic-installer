@@ -1,0 +1,67 @@
+#!/bin/bash
+
+PT=$(dirname $(realpath $0))
+BLKSZ=16k
+CHNKSZ=$((2**24))
+OUTFILE=/dev/sda
+MARIO=sonic
+
+CHANGE_WP=change_wallpaper
+FAIL_IMG=failure.png
+SUCCESS_IMG=success.png
+
+gxpc quit
+gxpc use ssh $(hostname) .
+# TODO:change 
+gxpc explore --children_soft_limit 200 "10.0.3.[[100-199]]"
+
+gxpc mw bcp ${PT}/${MARIO} /root/
+gxpc e chmod 755 /root/${MARIO}
+
+gxpc mw bcp ${PT}/${CHANGE_WP} /root/
+if [ -f "${PT}/${FAIL_IMG}" ];then
+	gxpc mw bcp ${PT}/${FAIL_IMG} /root/
+fi
+if [ -f "${PT}/${SUCCESS_IMG}" ];then
+	gxpc mw bcp ${PT}/${SUCCESS_IMG} /root/
+fi
+
+# TODO: are there more elegant way?
+gxpc e 'gifconfig | grep 10.0.3.15' > /dev/null
+gxpc smask -
+gxpc e gifconfig | awk '{print $2;}' | sort > /tmp/ipaddrs
+
+for ip in $(cat /tmp/ipaddrs); do
+    fip=$(cat /tmp/ipaddrs | grep ${ip} -A 1 | tail -1)
+    if [ "${ip}" = "${fip}" ]; then
+	fip=
+    fi
+    verb=
+    if [ "${ip}" = "$(cat /tmp/ipaddrs|head -1)" ]; then
+	verb="-v -w"
+    fi
+    cat > /tmp/infect.sh <<EOF
+/root/${MARIO} \$@ ${verb} ${fip}
+exitcode=\$?
+if [ "\${exitcode}" != "0" ]; then
+	if [ -f "/root/${FAIL_IMG}" ]; then
+		/root/${CHANGE_WP} /root/${FAIL_IMG}
+	fi
+else
+	if [ -f "/root/${SUCCESS_IMG}" ]; then
+		/root/${CHANGE_WP} /root/${SUCCESS_IMG}
+	fi
+fi
+exit \${exitcode}
+EOF
+    scp /tmp/infect.sh ${ip}:/root/
+done
+
+gxpc e "bash /root/infect.sh -b ${BLKSZ} -c ${CHNKSZ} -o ${OUTFILE}" | tee /tmp/gxpc.log &
+
+while [ $(cat /tmp/gxpc.log | wc -l) != $(cat /tmp/ipaddrs | wc -l) ]; do
+    sleep 1
+done
+
+./${MARIO} -i /dev/sda -c ${CHNKSZ} -b ${BLKSZ} $(cat /tmp/ipaddrs|head -1)
+

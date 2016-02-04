@@ -10,7 +10,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.24 2012/07/04 07:22:22 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.25 2013/10/25 12:00:53 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1873,12 +1873,12 @@ class gxpd(ioman.ioman):
         pch = ioman.primitive_channel_socket(so, 0) # blocking=0
         if dbg>=2:
             ioman.LOG("issueing connection to %s:%s:%d\n" % (af, addr, port))
-        r,err,msg = pch.connect((addr, port))
-        if r == -1 and err != errno.EINPROGRESS:
+        r,e = pch.connect((addr, port))
+        if r == -1 and e.args[0] != errno.EINPROGRESS:
             # or e.args[0] == errno.EAGAIN?
             if dbg>=2:
                 ioman.LOG("upgrade immediately failed "
-                          "with %s %s %s\n" % (r, err, msg))
+                          "with %s %s %s\n" % (r, e.args[0], e.args[1]))
             pch.close()
             return -1
         else:
@@ -2331,6 +2331,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.25  2013/10/25 12:00:53  ttaauu
+# added higher-level APIs to ioman and a document for it
+#
 # Revision 1.24  2012/07/04 07:22:22  ttaauu
 # shorten unix domain socket name (again), so it no longer includes user name
 #
