@@ -11,7 +11,8 @@ all :
 	chroot $(custom_live_squashfs_root) apt-get --force-yes -y --download-only install $(pandemic_packages)
 	chroot $(custom_live_squashfs_root) apt-get --force-yes -y install subversion
 	chroot $(custom_live_squashfs_root) rm -rf /root/pi
-	chroot $(custom_live_squashfs_root) svn checkout http://pandemic-installer.googlecode.com/svn/branches/14.04 /root/pi
+	chroot $(custom_live_squashfs_root) git clone https://github.com/taura/pandemic-installer.git /root/pi
+#	chroot $(custom_live_squashfs_root) svn checkout http://pandemic-installer.googlecode.com/svn/branches/14.04 /root/pi
 # 	chroot $(custom_live_squashfs_root) svn checkout http://pandemic-installer.googlecode.com/svn/trunk /root/pi
 # 	Copy scripts
 # 	mkdir $(custom_live_squashfs_root)/root/pi
