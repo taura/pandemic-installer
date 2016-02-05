@@ -1,16 +1,16 @@
 #!/bin/bash
 #
-# outbreak2 : 
+# outbreak : 
 # a (hopefully) more robust command to copy the source
 # disk to clients.
 #
 # usage:
-#   ./outbreak2 [options] src_file dst_file
+#   ./outbreak [options] src_file dst_file
 #
 # try:
-#    ./outbreak2 -h (or --help)
+#    ./outbreak -h (or --help)
 # and
-#    ./outbreak2 --long_help
+#    ./outbreak --long_help
 # for more details.
 #
 # make sure we do this at the beginning
@@ -61,7 +61,7 @@ verify=0
 # block of data.  blk_sz specifies the size of
 # data copied per invocation of blkcpc.
 #
-blk_sz=$((128 * 2 ** 20))
+blk_sz=$((256 * 2 ** 20))
 pkt_sz=$((32 * 1024))
 
 #
@@ -182,13 +182,13 @@ long_usage() {
 
 DESCRIPTION: 
 
-  outbreak2 copies SRC on the local machine
+  outbreak copies SRC on the local machine
   into DST on client machines.  See EXAMPLES
   section for some examples.  Without any
   option, it will copy /dev/sda of the local
   machine into /dev/sda of all client
   machines.  Client machines are listed in
-  ping.mk in the same directory of outbreak2
+  ping.mk in the same directory of outbreak
   (${this_dir}).  By default, it is all
   machines having IP addresses
   10.0.3.100-10.0.3.199 and responding to
@@ -207,7 +207,7 @@ THE BASIC BEHAVIOR:
 
   (i) When a client experiences a fault,
   other healthy clients can continue;
-  outbreak2 actually judges if it should
+  outbreak actually judges if it should
   continue with remaining clients or stop the
   entire process (bail out). When an error
   occurs, you can hopefully just sit down and
@@ -233,7 +233,7 @@ THE BASIC BEHAVIOR:
   first fault happens, with --resume and
   --ignore_stamp option (see the section
   "BEHAVIOR OF --RESUME OPTION" below).  To
-  this end, outbreak2 is writing the progress
+  this end, outbreak is writing the progress
   to a checkpoint file (ckpt.db) in the
   current directory.  When --resume option is
   given, it reads the checkpoint file to
@@ -288,7 +288,7 @@ A DETAILED BEHAVIOR UPON A FAILURE:
 
 BEHAVIOR OF --RESUME OPTION:
 
-  Each time you run outbreak2, it will copy
+  Each time you run outbreak, it will copy
   the entire drive from the beginning.  If
   you want to start from the point where the
   first failure occurs in the last
@@ -301,7 +301,7 @@ BEHAVIOR OF --RESUME OPTION:
   If you are impatient, remember the
   following.
 
-  (i) outbreak2 will show the offset it would
+  (i) outbreak will show the offset it would
   start from and ask you if it should go
   ahead.  See the value to see if it makes
   sense to you (i.e., where the first fault
@@ -313,7 +313,7 @@ BEHAVIOR OF --RESUME OPTION:
   TO THE FAILED DISK.  In short, use
   --ignore_timestamp only when you leave
   failed machines as they are (don't reboot them,
-  don't modify their disks) and rerun outbreak2
+  don't modify their disks) and rerun outbreak
   again from that state.
 
   (iii) --resume (without --ignore_timestamp)
@@ -339,7 +339,7 @@ BEHAVIOR OF --RESUME OPTION:
   copying blocks.  All clients are engaged in
   copying the same block at the same time.
   Whenever a single block has been written to
-  all working clients, outbreak2 will record
+  all working clients, outbreak will record
   that fact to a checkpoint file
   (ckpt.db). It is a simple human-readable
   text file and its each record looks like:
@@ -359,7 +359,7 @@ BEHAVIOR OF --RESUME OPTION:
   written.
 
   Whenever a single block has been written to
-  all clients, outbreak2 will update the
+  all clients, outbreak will update the
   checkpoint file.  In this process, the pair
   (addrs, path) is used as a key.  MTIME is
   the modification time of the destination
@@ -370,7 +370,7 @@ BEHAVIOR OF --RESUME OPTION:
   with the modification time corresponding to
   the last block.
 
-  When outbreak2 is executed with --resume
+  When outbreak is executed with --resume
   option, it consults the checkpoint file and
   matches clients that participate this time
   with records in the checkpoint file.  For
@@ -429,15 +429,15 @@ DISK COPY VS. FILE COPY:
   names as the source and destination files.
   e.g.,
 
-  ./outbreak2 big_file_src big_file_dst
+  ./outbreak big_file_src big_file_dst
 
 or
 
-  ./outbreak2 big_file 
+  ./outbreak big_file 
 
 the latter of which is equivalent to 
 
-  ./outbreak2 big_file big_file 
+  ./outbreak big_file big_file 
 
   This feature is mainly used for debugging
   and testing this program (you don't want to
@@ -489,14 +489,14 @@ OPTIONS:
     of the fact that relative path names are relative
     to a directory unique to each client.  So, for 
     example, 
-      ./outbreak2 --mode local foo bar
+      ./outbreak --mode local foo bar
     is safe (bar becomes unique to each client).
 
   --verbosity V : controls the verbosity level. 
 
   --blk_sz N : determines the unit of work.
 
-    outbreak2 repeatedly invokes blkcpc
+    outbreak repeatedly invokes blkcpc
     command (of GXP) to copy the file.  This
     option specifies how much data will be
     transferred on each invocation of blkcpc
@@ -504,7 +504,7 @@ OPTIONS:
     will open, seek, read/write, and close
     the source/destination files, giving too
     small a blk_sz value will result in large
-    overhead.  On the other hand, outbreak2
+    overhead.  On the other hand, outbreak
     will show the progress and checkpoint it,
     you do not want to make it too large.
 
@@ -514,15 +514,15 @@ OPTIONS:
     blk_sz value.
 
   --never_quit_above N : specifies the number
-    of clients above which outbreak2 will
-    never bail out.  Normally, outbreak2 will
+    of clients above which outbreak will
+    never bail out.  Normally, outbreak will
     stop the entire process when it judges
     so many clients have failed so early that
     restarting the copy from scratch (perhaps
     with new machines or after fixing a problem
     that makes faults so common) won't lose too much
     time.  By specifying this value to a small
-    value, you can guarantee outbreak2 won't give
+    value, you can guarantee outbreak won't give
     up as long as that many clients still remain.
 
   --read_fault p :
@@ -540,13 +540,13 @@ OPTIONS:
 
   --block_on_fault 0/1 : 1 means upon an
     injected fault, the blkcpc process will
-    indefinitely block until outbreak2 killed
+    indefinitely block until outbreak killed
     them.
 
 
 FILES:
 
-ckpt.db : outbreak2 will create this file to
+ckpt.db : outbreak will create this file to
    record how much data were successfully
    copied to each client.  It is a
    |-separated text file containing IP
@@ -554,7 +554,7 @@ ckpt.db : outbreak2 will create this file to
    destination file, the modification time,
    and the offset to which the copy
    succeeded.  when --resume option is given,
-   outbreak2 consults this file to skip data
+   outbreak consults this file to skip data
    that can be surely omitted.
 
 /tmp/USER/outbreak/N : a working directory of
@@ -580,13 +580,13 @@ status.pid : a file containing the pid of the
    as status.svg
 
 EXAMPLES:
-(0) ./outbreak2 -n
+(0) ./outbreak -n
 
   shows you what is going to happen and exits
   without actually doing work. Always do this
   before you actually go ahead.
 
-(1) ./outbreak2 
+(1) ./outbreak 
 
   copies /dev/sda of the local machine into
   /dev/sda of all ping-reachable machines
@@ -597,25 +597,25 @@ EXAMPLES:
   Modify ping.mk when you want to change this
   behavior.
 
-(2) ./outbreak2 /dev/sdb
+(2) ./outbreak /dev/sdb
 
   ditto, but copies /dev/sdb instead of
   /dev/sda.  Use this when you know the drive
   you want to copy is /dev/sdb.
 
-(3) ./outbreak2 /dev/sdb /dev/sda
+(3) ./outbreak /dev/sdb /dev/sda
 
   copies the /dev/sdb of the local machine to
   /dev/sda of client machines.
 
-(4) ./outbreak2 --resume 
+(4) ./outbreak --resume 
 
   resumes copying from the point where the
   first fault occurred in the last run.  See
   BEHAVIOR OF --RESUME OPTION above for
   details.
 
-(5) ./outbreak2 --mode local foo bar
+(5) ./outbreak --mode local foo bar
 
   copies FOO under the current directory to
   /tmp/USER/outbreak/{0,1,2}/bar.
@@ -637,7 +637,7 @@ EOF
 # will set the command line of this process that can be
 # easily parsed.
 #
-eval set -- $(getopt -o "hnf" --long help,long_help,force,dryrun,resume,ignore_timestamp,verify,disk_check,net_check,no_wallpaper,blk_sz:,pkt_sz:,timeout:,never_quit_above:,mode:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
+eval set -- $(getopt -o "hnf" --long help,long_help,force,dryrun,resume,ignore_timestamp,verify,master_check,master_fix,disk_check,net_check,no_wallpaper,blk_sz:,pkt_sz:,timeout:,never_quit_above:,mode:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
 
 parse_args() {
     # the command line has been canonicalized, so we simply
@@ -682,6 +682,14 @@ parse_args() {
 		;;
 	    --verify)
 		verify=1
+		shift 1
+		;;
+	    --master_check)
+		master_check=1
+		shift 1
+		;;
+	    --master_fix)
+		master_fix=1
 		shift 1
 		;;
 	    --disk_check)
@@ -811,6 +819,8 @@ print_args() {
     echo verify="${verify}"
     echo creat="${creat}"
     echo trunc="${trunc}"
+    echo master_check="${master_check}"
+    echo master_fix="${master_fix}"
     echo disk_check="${disk_check}"
     echo net_check="${net_check}"
     echo wallpaper="${wallpaper}"
@@ -1208,9 +1218,57 @@ copy_block() {
     gxpc restoremask after
 }
 
+check_nfs_server_up() {
+    if ps auxww | grep -v grep | grep nfsd ; then
+	echo "nfs server is up"
+	return 0
+    else
+	echo "nfs server seems NOT RUNNING"
+	return 1
+    fi
+}
 
+check_dhcp_server_up() {
+    if ps auxww | grep -v grep | grep dhcpd ; then
+	echo "DHCP server is up"
+	return 0
+    else
+	echo "DHCP server seems NOT RUNNING"
+	return 1
+    fi
+}
 
+check_tftp_server_up() {
+    if ps auxww | grep -v grep | grep tftpd ; then
+	echo "tftp server is up"
+	return 0
+    else
+	echo "tftp server seems NOT RUNNING"
+	return 1
+    fi
+}
 
+# check the condition of this server 
+master_health_check() {
+    check_dhcp_server_up
+    check_tftp_server_up
+    check_nfs_server_up
+}
+
+master_health_fix() {
+    if ! check_dhcp_server_up ; then
+	echo "trying to fix it"
+	service restart isc-dhcp-server
+    fi
+    if ! check_tftp_server_up ; then
+	echo "trying to fix it"
+	service restart tftpd-hpa
+    fi
+    if ! check_nfs_server_up ; then
+	echo "trying to fix it"
+	service restart nfs-kernel-server
+    fi
+}
 
 main() {
     if ! parse_args $@; then 
@@ -1226,9 +1284,18 @@ main() {
 	usage
 	return 0
     fi
+    if [ "${master_check}" = 1 ] ; then
+	master_health_check
+	return 0
+    fi
+    if [ "${master_fix}" = 1 ] ; then
+	master_health_fix
+	return 0
+    fi
     if [ "${verbosity}" -ge 3 ] ; then 
 	print_args
     fi
+
 
     # get the size of the source file/disk
     sz=$(get_file_size ${src_file})
