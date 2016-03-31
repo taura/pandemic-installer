@@ -16,7 +16,8 @@
 # make sure we do this at the beginning
 # $_ is the path name with which this program
 # is invoked. 
-this_file=$_
+this_file=$0 
+# $__
 cur_dir=$(pwd)
 if [ "${this_file:0:1}" = "/" ]; then
     # this_file is an absolute path name
@@ -897,10 +898,9 @@ parse_number_set() {
 }
 
 get_pingable_clients() {
-    echo "client=${client}"
     last_octets=$(echo ${client} | parse_number_set)
     ping_mk=${this_dir}/ping.mk
-    make  -f ${ping_mk} -j last_octets="${last_octets}"
+    make -s -f ${ping_mk} -j last_octets="${last_octets}"
 }
 
 #
