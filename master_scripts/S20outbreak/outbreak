@@ -72,6 +72,20 @@ pkt_sz=$((32 * 1024))
 #
 timeout=0
 
+# set of clients
+# comma-separated list of either N or N-N.
+# e.g.,
+#   0-13,15-23,25-99
+# 0 means the client that has IP address 10.0.3.100
+# 1 means the client that has IP address 10.0.3.101
+#    ...
+# it does no harm to specify non-existing clients
+# they are pinged and those that do not respond are 
+# ignored.
+# this option is useful when you deliberately exclude 
+# some clients
+client=0-99
+
 #
 # 1 if local test mode. when it is set, this command
 # will do everything locally. it copies test_file_src
@@ -159,6 +173,7 @@ usage() {
     echo "  --disk_check"
     echo "  --net_check"
     echo "  --no_wallpaper"
+    echo "  --client num,num-num,... [${client}]"
     echo "  --mode local/production [${mode}]"
     echo "  --verbosity 0-4 [${verbosity}]"
     echo "  --blk_sz N [${blk_sz}]"
@@ -477,6 +492,8 @@ OPTIONS:
   --no_wallpaper : does not show status windows on 
     clients.  
 
+  --client N,N-N,...
+
   --mode local/production : --mode local can be
     used to locally test this program. when --mode
     local is given, it uses local processes as 
@@ -637,7 +654,11 @@ EOF
 # will set the command line of this process that can be
 # easily parsed.
 #
-eval set -- $(getopt -o "hnf" --long help,long_help,force,dryrun,resume,ignore_timestamp,verify,master_check,master_fix,disk_check,net_check,no_wallpaper,blk_sz:,pkt_sz:,timeout:,never_quit_above:,mode:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
+args=$(getopt -o "hnf" --long help,long_help,force,dryrun,resume,ignore_timestamp,verify,master_check,master_fix,disk_check,net_check,no_wallpaper,blk_sz:,pkt_sz:,timeout:,never_quit_above:,mode:,client:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
+if [ "$?" != "0" ]; then
+    exit 1;
+fi
+eval set -- ${args}
 
 parse_args() {
     # the command line has been canonicalized, so we simply
@@ -718,6 +739,10 @@ parse_args() {
 		;;
 	    --never_quit_above)
 		never_quit_above="$2"
+		shift 2
+		;;
+	    --client)
+		client="$2"
 		shift 2
 		;;
 	    --mode)
@@ -867,9 +892,15 @@ get_file_size() {
 # the trick is in ping.mk file in this directory.
 #
 
+parse_number_set() {
+    awk '{ for(i=1;i<=NF;i++) if (match($i, /[0-9]+\-[0-9]+/)) { split($i, a, "-"); for (j=a[1]; j<=a[2]; j++) printf("%d ", 100+j) } else { printf("%d ", 100+$i) } }' FS=, 
+}
+
 get_pingable_clients() {
+    echo "client=${client}"
+    last_octets=$(echo ${client} | parse_number_set)
     ping_mk=${this_dir}/ping.mk
-    make -s -f ${ping_mk} -j 
+    make  -f ${ping_mk} -j last_octets="${last_octets}"
 }
 
 #
@@ -906,7 +937,7 @@ bring_up_clients_and_change_dir() {
 	echo "outbreak: clients: ${clients}"
     fi
     gxpc use ${rsh_method} $(hostname) .
-    gxpc explore --timeout 15.0 --children_soft_limit 200 ${clients}
+    gxpc explore --timeout 15.0 --children_soft_limit 200 --children_hard_limit 200 ${clients}
 
     gxpc -G ${src_gupid} export "OUTBREAK_CLIENT_IDX=\${GXP_EXEC_IDX}"
 
