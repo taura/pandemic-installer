@@ -46,15 +46,21 @@ endif
 
 # ---------- variables you might want to specify ----------
 # (1) original image file name; absolute path or relative to current dir
-orig_iso ?= ubuntu-14.04.3-desktop-amd64.iso
+orig_iso ?= $(shell ls ubuntu-*.iso | tail -1)
+ifeq ($(orig_iso),)
+$(error "orig_iso not defined. put ubuntu iso in the directory or specify one in config.mk")
+endif
 
 # (2) if you want to create a custom ISO image file, give its filename.
 # this MUST BE an absolute path
-cust_iso ?= $(realpath .)/ubuntu-14.04.3-desktop-amd64.iso
+cust_iso ?= $(realpath .)/custom-$(shell ls ubuntu-*.iso | tail -1)
+ifeq ($(cust_iso),)
+$(error "cust_iso not defined. put ubuntu iso in the directory or specify one in config.mk")
+endif
 
 # (3) image name of your ISO image (if you want to create one), 
 # which in practice does not matter
-image_name ?= Quantal Quetzal Customized
+image_name ?= Customized Ubuntu
 
 # (4) work dir in which we extract the whole file system for the master. 
 # should use fast and large enough drive to 
@@ -76,11 +82,11 @@ usb_mnt  ?= $(shell mount | awk '$$1 == usb_part { print $$3 }' usb_part=$(usb_p
 
 # (6) mbr record to dump into usb stick ; 
 # taken from syslinux package, but you may have your own tarball
-mbr_bin  ?= /usr/lib/syslinux/mbr.bin
+mbr_bin  ?= $(shell ls /usr/lib/syslinux/mbr/mbr.bin /usr/lib/syslinux/mbr.bin 2> /dev/null | head -1)
 
 # (7) menu.c32 file written to usb stick
 # taken from syslinux package, but you may have your own tarball
-syslinux_menu ?= /usr/lib/syslinux/menu.c32
+syslinux_menu ?= $(shell ls /usr/lib/syslinux/modules/efi64/menu.c32 /usr/lib/syslinux/menu.c32 2> /dev/null | head -1)
 
 # (8) if you want to test usb drive with virtualbox, you may convert
 # usb stck to a vmdk file; name its file name (totally optional)
@@ -156,6 +162,7 @@ check_tools :
 # in case it is already mounted, try umount first.
 # on success, we must have $(mnt)/casper, among others
 $(mnt)/casper : $(orig_iso) check_tools
+	@echo "============== STEP 1 : mount Ubuntu ISO =============="
 	[ `whoami` = root ]
 	mkdir -p $(mnt)
 	umount -lf $(mnt) 2> /dev/null; mount -o loop,ro $(orig_iso) $(mnt)
@@ -166,6 +173,7 @@ $(mnt)/casper : $(orig_iso) check_tools
 # extract its contents, except for filesystem.squashfs (the main
 # file system tree image) into another working directory $(extract)
 $(extract)/extract_ok : $(mnt)/casper
+	@echo "============== STEP 2 : extract ISO files =============="
 	[ `whoami` = root ]
 	mkdir -p $(extract)
 	rsync --exclude /casper/filesystem.squashfs -a $(mnt)/ $(extract)
@@ -175,13 +183,15 @@ $(extract)/extract_ok : $(mnt)/casper
 # extract the main file system tree into another working 
 # directory $(custom_live_squashfs_root), by unsquashing /casper/filesystem.squashfs
 # in the ISO image
-$(custom_live_squashfs_root)/root_ok : $(mnt)/casper
+$(custom_live_squashfs_root)/root_ok : $(mnt)/casper $(extract)/extract_ok
+	@echo "============== STEP 3.1 : unsquash into a directory tree for master =============="
 	[ `whoami` = root ]
 	rm -rf $(custom_live_squashfs_root)
 	unsquashfs -d $(custom_live_squashfs_root) $(mnt)/casper/filesystem.squashfs
 	touch $@
 
-$(custom_live_squashfs_patient_root)/patient_root_ok : $(mnt)/casper
+$(custom_live_squashfs_patient_root)/patient_root_ok : $(mnt)/casper $(extract)/extract_ok
+	@echo "============== STEP 3.2 : unsquash into a directory tree for clients =============="
 	[ `whoami` = root ]
 	rm -rf $(custom_live_squashfs_patient_root)
 	unsquashfs -d $(custom_live_squashfs_patient_root) $(mnt)/casper/filesystem.squashfs
@@ -194,8 +204,10 @@ $(custom_live_squashfs_patient_root)/patient_root_ok : $(mnt)/casper
 #    the same CD image to its clients can ssh to them
 $(custom_live_squashfs_root)/customize_ok : $(custom_live_squashfs_root)/root_ok $(custom_live_squashfs_patient_root)/patient_root_ok
 # you must sudo 
+	@echo "============== STEP 4 : edit master and client directory trees =============="
 	[ `whoami` = root ]
 # prepare: mount important file system
+	@echo "============== STEP 4.1 : mount special file systems =============="
 	umount -lf $(custom_live_squashfs_root)/dev             2> /dev/null || :
 	mount --bind /dev/ $(custom_live_squashfs_root)/dev
 	chroot $(custom_live_squashfs_root) umount -lf /proc    2> /dev/null || :
@@ -215,18 +227,33 @@ $(custom_live_squashfs_root)/customize_ok : $(custom_live_squashfs_root)/root_ok
 	chroot $(custom_live_squashfs_patient_root) umount -lf /dev/pts 2> /dev/null || :
 	chroot $(custom_live_squashfs_patient_root) mount -t devpts none /dev/pts
 	cp /etc/resolv.conf $(custom_live_squashfs_patient_root)/etc/resolv.conf
+	@echo "============== STEP 4.2 : customize master/clients file systems =============="
 # now real work; we may want to extend this part in future
 	for d in $(shell ls -1d scripts/S*/); do $(MAKE) -C $$d -f `basename $$d`.mk || exit 1 ; done
 # clean up 
-	umount -lf $(custom_live_squashfs_root)/dev             || :
-	chroot $(custom_live_squashfs_root) umount -lf /proc    || : 
-	chroot $(custom_live_squashfs_root) umount -lf /sys     || :
-	chroot $(custom_live_squashfs_root) umount -lf /dev/pts || : 
-# clean up patient
-	umount -lf $(custom_live_squashfs_patient_root)/dev             || :
-	chroot $(custom_live_squashfs_patient_root) umount -lf /proc    || : 
-	chroot $(custom_live_squashfs_patient_root) umount -lf /sys     || :
-	chroot $(custom_live_squashfs_patient_root) umount -lf /dev/pts || : 
+# try unmounting until we succeed or failed 10 times
+	@echo "============== STEP 4.3 : unmount special file systems =============="
+	for d in dev sys proc dev/pts; do \
+		for i in `seq 1 10`; do \
+			if mountpoint $(custom_live_squashfs_root)/$${d} ; then \
+				umount $(custom_live_squashfs_root)/$${d} ; \
+			else \
+				echo "umount /$${d} OK" ; break; \
+			fi ; \
+			sleep 1; \
+		done | grep "OK" || echo "could not umount /$${d}, ignore an keep going" ; \
+	done
+# unmount patient root
+	for d in dev sys proc dev/pts; do \
+		for i in `seq 1 10`; do \
+			if mountpoint $(custom_live_squashfs_patient_root)/$${d} ; then \
+				umount $(custom_live_squashfs_patient_root)/$${d} ; \
+			else \
+				echo "umount /$${d} OK" ; break; \
+			fi ; \
+			sleep 1; \
+		done | grep "OK" || echo "could not umount /$${d}, ignore an keep going" ; \
+	done
 	touch $@
 
 # STEP 5:
@@ -234,6 +261,7 @@ $(custom_live_squashfs_root)/customize_ok : $(custom_live_squashfs_root)/root_ok
 # package it into a squashfs file in $(extract)
 # also create its manifest, which must exist in live CD
 $(extract)/casper/filesystem.squashfs : $(custom_live_squashfs_root)/customize_ok  $(extract)/extract_ok
+	@echo "============== STEP 5 : make squashed file system =============="
 	[ `whoami` = root ]
 # mksquash patient root into master root
 	rm -rf $(custom_live_squashfs_root)/patient_root
@@ -276,15 +304,27 @@ $(usb_mnt)/syslinux.cfg : $(extract)/casper/filesystem.squashfs
 clean :
 	[ `whoami` = root ]
 # unmount master root
-	umount -lf $(custom_live_squashfs_root)/dev ; :
-	chroot $(custom_live_squashfs_root) umount -lf /proc ; :
-	chroot $(custom_live_squashfs_root) umount -lf /sys ; : 
-	chroot $(custom_live_squashfs_root) umount -lf /dev/pts ; :
+	for d in dev sys proc dev/pts; do \
+		for i in `seq 1 10`; do \
+			if mountpoint $(custom_live_squashfs_root)/$${d} ; then \
+				umount $(custom_live_squashfs_root)/$${d} ; \
+			else \
+				echo "umount $${d} OK" ; break; \
+			fi ; \
+			sleep 1; \
+		done | grep "OK" || exit 1 ; \
+	done
 # unmount patient root
-	umount -lf $(custom_live_squashfs_patient_root)/dev ; :
-	chroot $(custom_live_squashfs_patient_root) umount -lf /proc ; :
-	chroot $(custom_live_squashfs_patient_root) umount -lf /sys ; : 
-	chroot $(custom_live_squashfs_patient_root) umount -lf /dev/pts ; :
+	for d in dev sys proc dev/pts; do \
+		for i in `seq 1 10`; do \
+			if mountpoint $(custom_live_squashfs_patient_root)/$${d} ; then \
+				umount $(custom_live_squashfs_patient_root)/$${d} ; \
+			else \
+				echo "umount $${d} OK" ; break; \
+			fi ; \
+			sleep 1; \
+		done | grep "OK" || exit 1 ; \
+	done
 	umount -lf $(mnt) ; : 
 	rmdir $(mnt) ; : 
 	rm -rf $(custom_live_squashfs_root) ; : 
