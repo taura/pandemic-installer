@@ -122,10 +122,10 @@ EOF
     service network-manager restart
     # wait for the dynamic network connection to become up
     for i in `seq 1 5`; do
-	if ping -w 1 -c 1 pandemic-installer.googlecode.com ; then break; fi
+	if ping -w 1 -c 1 www.google.com ; then break; fi
 	sleep 1
     done
-    if ! ping -w 1 -c 1 pandemic-installer.googlecode.com ; then
+    if ! ping -w 1 -c 1 www.google.com ; then
 	echo "note: not connected to outside network"
     fi
     # now bring up statically configured network interface
