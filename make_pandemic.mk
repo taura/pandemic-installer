@@ -155,6 +155,8 @@ check_tools :
 	@echo "OK, you have syslinux"
 	@echo "checking whether you have squashfs-tools ..."
 	which unsquashfs
+	@echo "checking whether you have syslinux-utils ..."
+	which isohybrid
 	@echo "OK, you have squashfs-tools"
 
 # STEP 1:
@@ -281,15 +283,78 @@ $(cust_iso) : $(extract)/casper/filesystem.squashfs
 	[ `whoami` = root ]
 	cd $(extract) && find -type f -print0 | xargs -0 md5sum | grep -v isolinux/boot.cat | tee md5sum.txt
 	cd $(extract) && mkisofs -D -r -V "$(image_name)" -cache-inodes -J -l -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -o $(cust_iso) .
+	isohybrid $(cust_iso)
+
+bar :
+	umount $(usb_mnt)
+# make gpt partition table
+	(echo g; echo w) | fdisk $(usb_dev)
+# make a new Linux partition
+	(echo n; echo ; echo ; echo +4612M ; echo w) | fdisk $(usb_dev)
+# format with ext4
+	echo y | mkfs -t ext4 $(usb_dev)1
+# mount root fs
+	mkdir -p ROOT
+	mount $(usb_dev)1 ROOT
+# copy root fs
+	rsync -avz $(extract)/ ROOT/
+# unmount
+	umount ROOT
+	rmdir -p ROOT
+# make a new EFI partition
+	(echo n; echo ; echo ; echo +3M ; echo t ; echo ; echo 1 ; echo w) | fdisk $(usb_dev)
+# format with fat
+	echo y | mkfs -t fat $(usb_dev)2
+# mount EFI
+	mkdir -p EFI
+	mount $(usb_dev)2 EFI
+# copy EFI
+	rsync -avz $(extract)/EFI EFI/
+	umount EFI
+	rmdir -p EFI
+
+foo :
+#	umount $(usb_mnt)
+	parted $(usb_dev) mklabel gpt
+	dd $(cust_iso) $(usb_dev)
+	parted $(usb_dev) print
 
 $(usb_mnt)/syslinux.cfg : $(extract)/casper/filesystem.squashfs
 	@echo checking device/parition/mount point of usb drives
 	[ "$(usb_dev)" != "" ]
-	[ "$(usb_mnt)" != "" ]
-	[ "$(usb_part)" != "" ]
-	@echo "checking partition $(usb_part) is a fat partition"
+#	[ "$(usb_mnt)" != "" ]
+#	[ "$(usb_part)" != "" ]
+#	@echo "checking partition $(usb_part) is a fat partition"
 #	mount | grep $(usb_part) | grep fat
-	mount | grep $(usb_dev) | grep fat
+#	mount | grep $(usb_dev) | grep fat
+ifeq (0,0)
+#	umount $(usb_mnt)
+# make gpt partition table
+	(echo g; echo w) | fdisk $(usb_dev)
+# make a new Linux partition
+	(echo n; echo ; echo ; echo +4612M ; echo w) | fdisk $(usb_dev)
+# format with ext4
+	echo y | mkfs -t ext4 $(usb_dev)1
+# make a new EFI partition
+	(echo n; echo ; echo ; echo +3M ; echo t ; echo ; echo 1 ; echo w) | fdisk $(usb_dev)
+# format with fat
+	echo y | mkfs -t fat $(usb_dev)2
+# mount root fs
+	mkdir -p ROOT
+	mount $(usb_dev)1 ROOT
+# copy root fs
+	rsync -avz $(extract)/ ROOT/
+# unmount
+	umount ROOT
+	rmdir -p ROOT
+# mount EFI
+	mkdir -p EFI
+	mount $(usb_dev)2 EFI
+# copy EFI
+	rsync -avz $(extract)/EFI EFI/
+	umount EFI
+	rmdir -p EFI
+else
 	parted $(usb_dev) set 1 boot on
 	syslinux -i $(usb_part)
 	dd conv=notrunc bs=440 count=1 if=$(mbr_bin) of=$(usb_dev)
@@ -297,6 +362,7 @@ $(usb_mnt)/syslinux.cfg : $(extract)/casper/filesystem.squashfs
 	rm -rf $(usb_mnt)/.disk    && cp -r $(extract)/.disk $(usb_mnt)/
 	rm -f $(usb_mnt)/menu.c32  && cp $(syslinux_menu) $(usb_mnt)/menu.c32
 	cp misc/syslinux.cfg $(usb_mnt)/syslinux.cfg
+endif
 
 # clean up working directory.
 # we must make sure /proc, /sys, /dev/pts are unmounted
