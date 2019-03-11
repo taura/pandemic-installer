@@ -328,11 +328,13 @@ $(usb_mnt)/syslinux.cfg : $(extract)/casper/filesystem.squashfs
 #	mount | grep $(usb_part) | grep fat
 #	mount | grep $(usb_dev) | grep fat
 ifeq (0,0)
-#	umount $(usb_mnt)
+	@echo "============== burning image into USB =============="
+	umount $(usb_mnt)
 # make gpt partition table
 	(echo g; echo w) | fdisk $(usb_dev)
 # make a new Linux partition
 	(echo n; echo ; echo ; echo +4612M ; echo w) | fdisk $(usb_dev)
+	sleep 5
 # format with ext4
 	echo y | mkfs -t ext4 $(usb_dev)1
 # make a new EFI partition

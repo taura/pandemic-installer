@@ -64,7 +64,8 @@ media=/cdrom
 # (1) network interface through which this machine (master) 
 # is connected to clients. this script OVERWRITES its
 # address and subnet.
-pandemic_netif=eth0
+#pandemic_netif=eth0
+pandemic_netif=$(ls /sys/class/net | grep enp | head -1)
 
 # (2) the first three octets of the subnet in which master
 # and clients speak; 
@@ -173,7 +174,7 @@ EOF
     # edit default file
     sed --in-place=.bak -e s/INTERFACES=\"\"/INTERFACES=\"eth0\"/g ${default}
     # (re)start the server
-    initctl reload-configuration
+    # initctl reload-configuration
     service isc-dhcp-server restart
 }
 
@@ -198,9 +199,10 @@ EOF
     # (note: tftp server cannot see anywhere above /var/lib/tftpboot)
     mkdir -p ${tftpboot}/${distro}/casper
 #    cp -r ${media}/preseed ${tftpboot}/${distro}/
-    cp -r ${media}/casper/vmlinuz.efi ${media}/casper/initrd.lz ${tftpboot}/${distro}/casper/
+#    cp -r ${media}/casper/vmlinuz.efi ${media}/casper/initrd.lz ${tftpboot}/${distro}/casper/
+    cp -r ${media}/casper/vmlinuz ${media}/casper/initrd.lz ${tftpboot}/${distro}/casper/
 
-    initctl reload-configuration
+    # initctl reload-configuration
     service tftpd-hpa restart
 }
 
@@ -216,7 +218,7 @@ conf_nfsroot() {
 ${nfsroot} *(fsid=0,ro,all_squash,no_subtree_check,crossmnt)
 EOF
     # (re)start servers 
-    initctl reload-configuration
+    # initctl reload-configuration
     service nfs-kernel-server restart
 }
 
