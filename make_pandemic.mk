@@ -332,30 +332,30 @@ ifeq (0,0)
 	umount $(usb_mnt)
 # make gpt partition table
 	(echo g; echo w) | fdisk $(usb_dev)
-# make a new Linux partition
-	(echo n; echo ; echo ; echo +4612M ; echo w) | fdisk $(usb_dev)
-	sleep 5
-# format with ext4
-	echo y | mkfs -t ext4 $(usb_dev)1
 # make a new EFI partition
 	(echo n; echo ; echo ; echo +3M ; echo t ; echo ; echo 1 ; echo w) | fdisk $(usb_dev)
 # format with fat
-	echo y | mkfs -t fat $(usb_dev)2
+	echo y | mkfs -t fat $(usb_dev)1
+# make a new Linux partition
+	(echo n; echo ; echo ; echo ; echo w) | fdisk $(usb_dev) # +4612M 
+	sleep 10
+# format with ext4
+	echo y | mkfs -t ext4 $(usb_dev)2
+# mount EFI
+	mkdir -p EFI
+	mount $(usb_dev)1 EFI
+# copy EFI
+	rsync -avz $(extract)/EFI EFI/
+	umount EFI
+	rmdir -p EFI
 # mount root fs
 	mkdir -p ROOT
-	mount $(usb_dev)1 ROOT
+	mount $(usb_dev)2 ROOT
 # copy root fs
 	rsync -avz $(extract)/ ROOT/
 # unmount
 	umount ROOT
 	rmdir -p ROOT
-# mount EFI
-	mkdir -p EFI
-	mount $(usb_dev)2 EFI
-# copy EFI
-	rsync -avz $(extract)/EFI EFI/
-	umount EFI
-	rmdir -p EFI
 else
 	parted $(usb_dev) set 1 boot on
 	syslinux -i $(usb_part)

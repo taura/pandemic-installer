@@ -228,8 +228,9 @@ EOF
 conf_syslinux() {
     # install syslinux
     apt-get -y install syslinux
+    apt-get -y install pxelinux
     # install bootloader
-    cp /usr/lib/syslinux/pxelinux.0 ${tftpboot}/
+    cp /usr/lib/PXELINUX/pxelinux.0 ${tftpboot}/ || cp /usr/lib/syslinux/pxelinux.0 ${tftpboot}/
 }
 
 # ---------------------------------

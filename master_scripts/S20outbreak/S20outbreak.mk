@@ -5,6 +5,8 @@
 #
 
 all: 
-	apt-get -y install realpath
+	apt-get -y install coreutils
+# 16.04 or earlier
+#	apt-get -y install realpath
 
 
