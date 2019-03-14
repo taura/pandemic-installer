@@ -5,7 +5,7 @@
 # so that we can just run become_pandemic_master
 #
 
-pandemic_packages := isc-dhcp-server tftpd-hpa nfs-kernel-server syslinux pxelinux coreutils
+pandemic_packages := isc-dhcp-server tftpd-hpa nfs-kernel-server syslinux pxelinux coreutils make
 all :
 # download tools we need in the master, but not install
 	chroot $(custom_live_squashfs_root) apt-get --force-yes -y --download-only install $(pandemic_packages)
