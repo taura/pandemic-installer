@@ -329,7 +329,9 @@ $(usb_mnt)/syslinux.cfg : $(extract)/casper/filesystem.squashfs
 #	mount | grep $(usb_dev) | grep fat
 ifeq (0,0)
 	@echo "============== burning image into USB =============="
+ifneq ($(usb_mnt),)
 	umount $(usb_mnt)
+endif
 # make gpt partition table
 	(echo g; echo w) | fdisk $(usb_dev)
 # make a new EFI partition

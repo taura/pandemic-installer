@@ -237,6 +237,7 @@ conf_syslinux() {
 # run additional customization
 # ---------------------------------
 conf_user() {
+    apt-get -y install make
     for d in `ls -1d master_scripts/S*/` ; do
 	make -C $d -f `basename $d`.mk
     done
