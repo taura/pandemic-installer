@@ -85,7 +85,7 @@ pandemic_client_range="${pandemic_subnet}.100 ${pandemic_subnet}.199"
 
 # (5) distribution name; it just names the nfsroot directory.
 # otherwise it does not matter
-distro=ubuntu-14.04.3-amd64
+distro=ubuntu
 
 # (6) name of the nfsroot directory. 
 # in my experience, it cannot not /var directory. NFS
@@ -162,7 +162,8 @@ subnet ${pandemic_subnet}.0 netmask 255.255.255.0 {
 	option domain-name "localnet";		# Domain name
 	option routers ${pandemic_net_ipaddr};
 	next-server	${pandemic_net_ipaddr};		# should be IP address
-	filename	"pxelinux.0";
+#	filename	"pxelinux.0";
+	filename	"BOOTX64.EFI";
 }
 EOF
     # copy the original, if it is the first time
@@ -187,10 +188,11 @@ conf_tftp() {
     mkdir -p ${tftpboot}/pxelinux.cfg
     # generate /var/lib/tftpboot/pxelinux.cfg/default;
     # it uses a kernel (vmlinuz.efi) and initrd image found in Live CD media.
+    # kernel /${distro}/casper/vmlinuz.efi
     cat > ${tftpboot}/pxelinux.cfg/default <<EOF
 default live
 label live
-    kernel /${distro}/casper/vmlinuz.efi
+    kernel /${distro}/casper/vmlinuz
     append initrd=/${distro}/casper/initrd.lz boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:${nfsroot} quiet splash --
 EOF
 
@@ -231,6 +233,7 @@ conf_syslinux() {
     apt-get -y install pxelinux
     # install bootloader
     cp /usr/lib/PXELINUX/pxelinux.0 ${tftpboot}/ || cp /usr/lib/syslinux/pxelinux.0 ${tftpboot}/
+    cp /boot/efi/EFI/BOOT/BOOTX64.EFI ${tftpboot}/
 }
 
 # ---------------------------------

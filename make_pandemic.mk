@@ -106,6 +106,7 @@ mnt := $(work_dir)/mnt
 extract := $(work_dir)/ext
 # directory in which we edit the file system image in iso
 # (/casper/filesystem.squash)
+export custom_live_squashfs_extract := $(extract)
 export custom_live_squashfs_root := $(work_dir)/edit
 export custom_live_squashfs_patient_root := $(work_dir)/patient_edit
 
@@ -284,40 +285,6 @@ $(cust_iso) : $(extract)/casper/filesystem.squashfs
 	cd $(extract) && find -type f -print0 | xargs -0 md5sum | grep -v isolinux/boot.cat | tee md5sum.txt
 	cd $(extract) && mkisofs -D -r -V "$(image_name)" -cache-inodes -J -l -b isolinux/isolinux.bin -c isolinux/boot.cat -no-emul-boot -boot-load-size 4 -boot-info-table -o $(cust_iso) .
 	isohybrid $(cust_iso)
-
-bar :
-	umount $(usb_mnt)
-# make gpt partition table
-	(echo g; echo w) | fdisk $(usb_dev)
-# make a new Linux partition
-	(echo n; echo ; echo ; echo +4612M ; echo w) | fdisk $(usb_dev)
-# format with ext4
-	echo y | mkfs -t ext4 $(usb_dev)1
-# mount root fs
-	mkdir -p ROOT
-	mount $(usb_dev)1 ROOT
-# copy root fs
-	rsync -avz $(extract)/ ROOT/
-# unmount
-	umount ROOT
-	rmdir -p ROOT
-# make a new EFI partition
-	(echo n; echo ; echo ; echo +3M ; echo t ; echo ; echo 1 ; echo w) | fdisk $(usb_dev)
-# format with fat
-	echo y | mkfs -t fat $(usb_dev)2
-# mount EFI
-	mkdir -p EFI
-	mount $(usb_dev)2 EFI
-# copy EFI
-	rsync -avz $(extract)/EFI EFI/
-	umount EFI
-	rmdir -p EFI
-
-foo :
-#	umount $(usb_mnt)
-	parted $(usb_dev) mklabel gpt
-	dd $(cust_iso) $(usb_dev)
-	parted $(usb_dev) print
 
 $(usb_mnt)/syslinux.cfg : $(extract)/casper/filesystem.squashfs
 	@echo checking device/parition/mount point of usb drives
