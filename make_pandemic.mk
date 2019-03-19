@@ -301,15 +301,19 @@ ifneq ($(usb_mnt),)
 endif
 # make gpt partition table
 	(echo g; echo w) | fdisk $(usb_dev)
+	sleep 2
 # make a new EFI partition
 	(echo n; echo ; echo ; echo +3M ; echo t ; echo ; echo 1 ; echo w) | fdisk $(usb_dev)
+	sleep 2
 # format with fat
 	echo y | mkfs -t fat $(usb_dev)1
+	sleep 2
 # make a new Linux partition
 	(echo n; echo ; echo ; echo ; echo w) | fdisk $(usb_dev) # +4612M 
-	sleep 10
+	sleep 2
 # format with ext4
 	echo y | mkfs -t ext4 $(usb_dev)2
+	sleep 2
 # mount EFI
 	mkdir -p EFI
 	mount $(usb_dev)1 EFI
