@@ -162,8 +162,9 @@ subnet ${pandemic_subnet}.0 netmask 255.255.255.0 {
 	option domain-name "localnet";		# Domain name
 	option routers ${pandemic_net_ipaddr};
 	next-server	${pandemic_net_ipaddr};		# should be IP address
-#	filename	"pxelinux.0";
-	filename	"BOOTX64.EFI";
+	filename	"pxelinux.0";
+#	filename	"BOOTx64.EFI";
+#	filename	"grubx64.efi";
 }
 EOF
     # copy the original, if it is the first time
@@ -173,7 +174,7 @@ EOF
     # append it to the end of the original file
     cat ${bak} ${diff} > ${conf}
     # edit default file
-    sed --in-place=.bak -e s/INTERFACES=\"\"/INTERFACES=\"eth0\"/g ${default}
+    sed --in-place=.bak -e s/INTERFACES=\"\"/INTERFACES=\"${pandemic_netif}\"/g ${default}
     # (re)start the server
     # initctl reload-configuration
     service isc-dhcp-server restart
@@ -187,23 +188,21 @@ conf_tftp() {
     tftpboot=/var/lib/tftpboot
     mkdir -p ${tftpboot}/pxelinux.cfg
     # generate /var/lib/tftpboot/pxelinux.cfg/default;
-    # it uses a kernel (vmlinuz.efi) and initrd image found in Live CD media.
-    # kernel /${distro}/casper/vmlinuz.efi
+    # it uses a kernel (vmlinuz) and initrd image found in Live CD media.
+    # still try to boot client in BIOS mode
+    # systemd.mask=tmp.mount is a workaround necessary to pxeboot
+    # clients based on 18.04. see
+    # https://bugs.launchpad.net/ubuntu/+source/systemd/+bug/1755863
     cat > ${tftpboot}/pxelinux.cfg/default <<EOF
 default live
 label live
     kernel /${distro}/casper/vmlinuz
-    append initrd=/${distro}/casper/initrd.lz boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:${nfsroot} quiet splash --
+    append initrd=/${distro}/casper/initrd.lz boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:${nfsroot} systemd.mask=tmp.mount quiet splash --
 EOF
-
-#    append initrd=/${distro}/casper/initrd.lz file=/${distro}/preseed/ubuntu.seed boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:/rofs/${nfsroot} quiet splash --
     # copy kernel and initrd image to tftp's directory
     # (note: tftp server cannot see anywhere above /var/lib/tftpboot)
     mkdir -p ${tftpboot}/${distro}/casper
-#    cp -r ${media}/preseed ${tftpboot}/${distro}/
-#    cp -r ${media}/casper/vmlinuz.efi ${media}/casper/initrd.lz ${tftpboot}/${distro}/casper/
     cp -r ${media}/casper/vmlinuz ${media}/casper/initrd.lz ${tftpboot}/${distro}/casper/
-
     # initctl reload-configuration
     service tftpd-hpa restart
 }
@@ -231,9 +230,13 @@ conf_syslinux() {
     # install syslinux
     apt-get -y install syslinux
     apt-get -y install pxelinux
-    # install bootloader
+    # install bootloader (BIOS)
     cp /usr/lib/PXELINUX/pxelinux.0 ${tftpboot}/ || cp /usr/lib/syslinux/pxelinux.0 ${tftpboot}/
-    cp /boot/efi/EFI/BOOT/BOOTX64.EFI ${tftpboot}/
+    cp /usr/lib/syslinux/modules/bios/ldlinux.c32 ${tftpboot}/
+    # install bootloader (UEFI), but I never successfully brought up
+    # UEFI clients (the next step seems having a right grub.cfg in it)
+    cp /boot/efi/EFI/BOOT/BOOTx64.EFI ${tftpboot}/
+    cp /boot/efi/EFI/BOOT/grubx64.efi ${tftpboot}/
 }
 
 # ---------------------------------
