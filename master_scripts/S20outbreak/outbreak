@@ -912,30 +912,38 @@ get_pingable_clients() {
     make -s -f ${ping_mk} -j last_octets="${last_octets}"
 }
 
+#
+# check master's link speed 
+# 
+
 check_master_speed() {
+    # find the interface having address 10.0.3.xxx
     interface=$(ip -o -4 address | grep 10.0.3 | awk '{ print $2 }')
     if [ "${interface}" = "" ]; then
-        echo "could not find interface for 10.0.3.x" 1>&2
+        echo "error: could not find interface for 10.0.3.x" 1>&2
         exit 1
     fi
+    # get its speed from /sys/class/net/${interface}/speed
     speed=$(cat /sys/class/net/${interface}/speed)
     if [ "${interface}" = "" ]; then
-        echo "could not get the speed of interface ${interface}" 1>&2
+        echo "error: could not get the speed of interface ${interface}" 1>&2
         exit 1
     fi
+    # compare it with --min_link_speed
     if [ ${speed} -lt ${min_link_speed} ] ; then
-        echo "speed of interface ${interface} is slow (= ${speed} < --min_link_speed = ${min_link_speed})" 1>&2
-        echo "to proceed with it, specify --min_link_speed ${speed}" 1>&2
+        echo "error: speed of interface ${interface} is slow (= ${speed} < --min_link_speed = ${min_link_speed})" 1>&2
+        echo "error: you'd better check the cable or reconnect; to proceed with it, specify --min_link_speed ${speed}" 1>&2
         exit 1
     fi
 }
 
 apply_min_link_speed() {
     check_master_speed
+    # select clients having a link speed >= --min_link_speed
     echo "choosing clients whose link speed are ${min_link_speed} (specify a value with --min_link_speed to be more/less stringent)"
     gxpc -G ${src_gupid} e "echo \$(hostname -I) : \$(cat /sys/class/net/enp*/speed)" | sort
-    gxpc -G ${src_gupid} e "[ \$(cat /sys/class/net/enp*/speed) -lt ${min_link_speed} ]"
-    gxpc smask -
+    gxpc -G ${src_gupid} e "[ \${GXP_EXEC_IDX} = 0 -o \$(cat /sys/class/net/enp*/speed) -lt ${min_link_speed} ]"
+    gxpc smask
 }
 
 #
