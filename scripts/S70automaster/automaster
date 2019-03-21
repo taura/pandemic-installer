@@ -8,5 +8,5 @@
 # Short-Description: your description here
 ### END INIT INFO
 cd /root/pi/
-./become_pandemic_master
+./become_pandemic_master > master.log 2>&1
 

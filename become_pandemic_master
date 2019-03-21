@@ -184,6 +184,17 @@ EOF
     service isc-dhcp-server restart
 }
 
+find_initrd() {
+    for initrd in initrd.lz initrd never_exist ; do
+        if [ -e ${media}/casper/${initrd} ]; then
+            echo ${initrd}
+            return 0
+        fi
+    done
+    echo "error: could not find initrd{.lz} in ${media}/casper/" 1>&2
+    exit 1
+}
+
 # ---------------------------------
 # install tftp server
 # ---------------------------------
@@ -197,16 +208,18 @@ conf_tftp() {
     # systemd.mask=tmp.mount is a workaround necessary to pxeboot
     # clients based on 18.04. see
     # https://bugs.launchpad.net/ubuntu/+source/systemd/+bug/1755863
+
+    initrd=$(find_initrd)
     cat > ${tftpboot}/pxelinux.cfg/default <<EOF
 default live
 label live
     kernel /${distro}/casper/vmlinuz
-    append initrd=/${distro}/casper/initrd.lz boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:${nfsroot} systemd.mask=tmp.mount quiet splash --
+    append initrd=/${distro}/casper/${initrd} boot=casper netboot=nfs nfsroot=${pandemic_net_ipaddr}:${nfsroot} systemd.mask=tmp.mount quiet splash --
 EOF
     # copy kernel and initrd image to tftp's directory
     # (note: tftp server cannot see anywhere above /var/lib/tftpboot)
     mkdir -p ${tftpboot}/${distro}/casper
-    cp -r ${media}/casper/vmlinuz ${media}/casper/initrd.lz ${tftpboot}/${distro}/casper/
+    cp -r ${media}/casper/vmlinuz ${media}/casper/${initrd} ${tftpboot}/${distro}/casper/
     service tftpd-hpa restart
 }
 
@@ -247,13 +260,14 @@ conf_grub_efi() {
 
     cp /usr/lib/grub/x86_64-efi-signed/grubnetx64.efi.signed ${tftpboot}/
     # cp /usr/lib/shim/shimx64.efi.signed ${tftpboot}/
+    initrd=$(find_initrd)
     cat > ${tftpboot}/${distro}/grub.cfg <<EOF
 set timeout=10
 menuentry 'Live' {
    net_ls_cards
    net_ls_addr
    linuxefi /${distro}/casper/vmlinuz ro systemd.mask=tmp.mount ip=dhcp boot=casper netboot=nfs nfsroot=10.0.3.15:/rofs/client_root quiet splash --
-   initrdefi /${distro}/casper/initrd.lz
+   initrdefi /${distro}/casper/${initrd}
 }
 EOF
 }
