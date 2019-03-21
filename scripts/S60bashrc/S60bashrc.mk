@@ -5,6 +5,4 @@
 #
 
 all :
-	echo >> $(custom_live_squashfs_root)/root/.bashrc 
-	echo "export PATH=\$$PATH:/root/pi/tools/gxp3" >> $(custom_live_squashfs_root)/root/.bashrc
-
+	cat _bashrc >> $(custom_live_squashfs_master_root)/root/.bashrc 
