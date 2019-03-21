@@ -1397,6 +1397,7 @@ main() {
     if [ "${run}" = 0 ] ; then exit 0; fi
 
     # ask if we should go ahead, unless -f or --force are given
+    stdbuf -oL echo ""
     if [ "${ask}" = 1 ] ; then
 	echo "should I go ahead [Y/n]?" 1>&2
 	reply=n
