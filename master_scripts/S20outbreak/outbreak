@@ -88,6 +88,11 @@ timeout=0
 client=0-99
 
 #
+# minimum link speed
+#
+min_link_speed=1000
+
+#
 # 1 if local test mode. when it is set, this command
 # will do everything locally. it copies test_file_src
 # in the current directory into test_file_dst of the
