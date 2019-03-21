@@ -936,7 +936,7 @@ bring_up_clients_and_change_dir() {
     else
 	rsh_method=sh
     fi
-    clients="$(get_clients)"
+    clients="$(get_pingable_clients)"
     if [ "${verbosity}" -ge 2 ] ; then
 	echo "outbreak: clients: ${clients}"
     fi
