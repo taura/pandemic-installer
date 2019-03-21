@@ -918,8 +918,8 @@ get_pingable_clients() {
 
 apply_min_link_speed() {
     echo "checking the link speed of clients (use e.g., --min-link-speed 1000 to choose only clients whose link speed are >= 1000)"
-    gxpc -G ${src_gupid} e 'echo $(hostname -I) : $(cat /sys/class/net/enp*/speed)' | sort
-    gxpc -G ${src_gupid} e '[ $(cat /sys/class/net/enp*/speed) -ge ${min_link_speed} ]'
+    gxpc -G ${src_gupid} e "echo \$(hostname -I) : \$(cat /sys/class/net/enp*/speed)" | sort
+    gxpc -G ${src_gupid} e "[ \$(cat /sys/class/net/enp*/speed) -ge ${min_link_speed} ]"
     gxpc smask
 }
 
