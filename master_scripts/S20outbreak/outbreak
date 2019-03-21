@@ -932,7 +932,7 @@ check_master_speed() {
     # compare it with --min_link_speed
     if [ ${speed} -lt ${min_link_speed} ] ; then
         echo "error: speed of interface ${interface} is slow (= ${speed} < --min_link_speed = ${min_link_speed})" 1>&2
-        echo "error: you'd better check the cable or reconnect; to proceed with it, specify --min_link_speed ${speed}" 1>&2
+        echo "error: if you think your NIC should be faster, check the cable and reconnect; to proceed with it, run the command again with --min_link_speed ${speed}" 1>&2
         exit 1
     fi
 }
