@@ -746,6 +746,10 @@ parse_args() {
 		client="$2"
 		shift 2
 		;;
+            --min-link-speed)
+		min_link_speed="$2"
+		shift 2
+		;;
 	    --mode)
 		mode="$2"
 		shift 2
@@ -906,12 +910,12 @@ get_pingable_clients() {
 #
 # clients, depending on it is a production run or local test
 #
-get_clients() {
-    if [ "${mode}" = production ] ; then
-	get_pingable_clients
-    else 
-	echo "client ${n_local_clients}"
-    fi
+
+apply_min_link_speed() {
+    echo "checking the link speed of clients (use e.g., --min-link-speed 1000 to choose only clients whose link speed are >= 1000)"
+    gxpc -G ${src_gupid} e 'echo $(hostname -I) : $(cat /sys/class/net/enp*/speed)' | sort
+    gxpc -G ${src_gupid} e '[ $(cat /sys/class/net/enp*/speed) -ge ${min_link_speed} ]'
+    gxpc smask
 }
 
 #
@@ -938,6 +942,8 @@ bring_up_clients_and_change_dir() {
     fi
     gxpc use ${rsh_method} $(hostname) .
     gxpc explore --timeout 15.0 --children_soft_limit 200 --children_hard_limit 200 ${clients}
+
+    apply_min_link_speed
 
     gxpc -G ${src_gupid} export "OUTBREAK_CLIENT_IDX=\${GXP_EXEC_IDX}"
 
