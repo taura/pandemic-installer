@@ -655,7 +655,7 @@ EOF
 # will set the command line of this process that can be
 # easily parsed.
 #
-args=$(getopt -o "hnf" --long help,long_help,force,dryrun,resume,ignore_timestamp,verify,master_check,master_fix,disk_check,net_check,no_wallpaper,blk_sz:,pkt_sz:,timeout:,never_quit_above:,mode:,client:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
+args=$(getopt -o "hnf" --long help,long_help,force,dryrun,resume,ignore_timestamp,verify,master_check,master_fix,disk_check,net_check,no_wallpaper,blk_sz:,pkt_sz:,timeout:,never_quit_above:,mode:,client:,min_link_speed:,n_local_clients:,verbosity:,read_fault:,send_fault:,recv_fault:,write_fault:,close_fault:,closesocket_fault:,block_on_fault: -- "$@")
 if [ "$?" != "0" ]; then
     exit 1;
 fi
@@ -746,7 +746,7 @@ parse_args() {
 		client="$2"
 		shift 2
 		;;
-            --min-link-speed)
+            --min_link_speed)
 		min_link_speed="$2"
 		shift 2
 		;;
