@@ -932,7 +932,7 @@ check_master_speed() {
 
 apply_min_link_speed() {
     check_master_speed
-    echo "checking the link speed of clients (use e.g., --min_link_speed 1000 to choose only clients whose link speed are >= 1000)"
+    echo "choosing clients whose link speed are ${min_link_speed} (specify a value with --min_link_speed to be more/less stringent)"
     gxpc -G ${src_gupid} e "echo \$(hostname -I) : \$(cat /sys/class/net/enp*/speed)" | sort
     gxpc -G ${src_gupid} e "[ \$(cat /sys/class/net/enp*/speed) -lt ${min_link_speed} ]"
     gxpc smask -
