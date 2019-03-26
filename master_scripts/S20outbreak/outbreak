@@ -937,6 +937,13 @@ check_master_speed() {
     fi
 }
 
+remove_duplicated_clients() {
+    dir=hogehoge$$
+    gxpc e mkdir /tmp/${dir}
+    gxpc smask
+    gxpc e rmdir /tmp/${dir}
+}
+
 apply_min_link_speed() {
     check_master_speed
     # select clients having a link speed >= --min_link_speed
@@ -975,6 +982,8 @@ bring_up_clients_and_change_dir() {
     gxpc use ${rsh_method} $(hostname) .
     gxpc explore --timeout 15.0 --children_soft_limit 200 --children_hard_limit 200 ${clients}
 
+    remove_duplicated_clients
+    
     apply_min_link_speed
 
     gxpc -G ${src_gupid} export "OUTBREAK_CLIENT_IDX=\${GXP_EXEC_IDX}"
