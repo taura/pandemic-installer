@@ -38,6 +38,59 @@
  * NFSマウントがすむと無事クライアントは立ち上がり，例のGUI画面まで進むはずである．
  * このPXE Boot -> tftp -> NFSマウント，という一連の流れが最もトラブルが起きやすい所．しかしこの部分はPandemic 固有の作り込みはほとんど無く，通常のネットワークブートをやるために，DHCPサーバ, tftpサーバ，NFSサーバを設定しているだけである．トラブルシュートはそれらのサーバの設定方法や，一般的なトラブルシュート方法を学べばよい．もちろん色々なイベントは/var/log/syslog に逐一記録されるので，物事がうまく行っているか確かめたければそれを適宜見るのも良い．
 
+# クライアント(patient)の起動に失敗したら
+
+ * マシンが変わると症状が変わるという感じで公式・頻出パターンのようなものは期待できない
+ * クライアントを見るのではなく, サーバのログを見るのが多くの場合正しい
+```
+tail -f /var/log/syslog
+```
+としておいてまたクライアントを起動. 期待するログが期待するタイミングで出力されるかを見る
+ * 上手くいったときのログ (注釈付き)
+```
+# (1) PXE boot. DHCPサーバからIPアドレス取得
+Jan 23 04:12:39 ubuntu dhcpd[6427]: DHCPDISCOVER from e8:6a:64:86:3b:aa via enp0s31f6
+Jan 23 04:12:40 ubuntu dhcpd[6427]: DHCPOFFER on 10.0.3.101 to e8:6a:64:86:3b:aa via enp0s31f6
+Jan 23 04:12:43 ubuntu dhcpd[6427]: DHCPREQUEST for 10.0.3.101 (10.0.3.15) from e8:6a:64:86:3b:aa via enp0s31f6
+Jan 23 04:12:43 ubuntu dhcpd[6427]: DHCPACK on 10.0.3.101 to e8:6a:64:86:3b:aa via enp0s31f6
+# (2) PXE boot. tftpサーバから小さいカーネルを取得
+Jan 23 04:12:43 ubuntu in.tftpd[8245]: tftp: client does not accept options
+Jan 23 04:13:24 ubuntu dhcpd[6427]: reuse_lease: lease age 41 (secs) under 25% threshold, reply with unaltered, existing lease for 10.0.3.101
+# (3) もう一度DHCPサーバからIPアドレス取得
+Jan 23 04:13:24 ubuntu dhcpd[6427]: DHCPDISCOVER from e8:6a:64:86:3b:aa via enp0s31f6
+Jan 23 04:13:24 ubuntu dhcpd[6427]: DHCPOFFER on 10.0.3.101 to e8:6a:64:86:3b:aa via enp0s31f6
+Jan 23 04:13:24 ubuntu dhcpd[6427]: reuse_lease: lease age 41 (secs) under 25% threshold, reply with unaltered, existing lease for 10.0.3.101
+Jan 23 04:13:24 ubuntu dhcpd[6427]: DHCPREQUEST for 10.0.3.101 (10.0.3.15) from e8:6a:64:86:3b:aa via enp0s31f6
+Jan 23 04:13:24 ubuntu dhcpd[6427]: DHCPACK on 10.0.3.101 to e8:6a:64:86:3b:aa via enp0s31f6
+# (4) NFSサーバに対し, ルートファイルシステムをマウント
+Jan 23 04:13:24 ubuntu rpc.mountd[7966]: authenticated mount request from 10.0.3.101:862 for /rofs/client_root (/rofs/client_root)
+# (5) もう一度DHCPサーバからIPアドレス取得
+Jan 23 04:13:28 ubuntu dhcpd[6427]: DHCPDISCOVER from e8:6a:64:86:3b:aa (ubuntu) via enp0s31f6
+Jan 23 04:13:29 ubuntu dhcpd[6427]: DHCPOFFER on 10.0.3.100 to e8:6a:64:86:3b:aa (ubuntu) via enp0s31f6
+Jan 23 04:13:29 ubuntu dhcpd[6427]: DHCPREQUEST for 10.0.3.100 (10.0.3.15) from e8:6a:64:86:3b:aa (ubuntu) via enp0s31f6
+Jan 23 04:13:29 ubuntu dhcpd[6427]: DHCPACK on 10.0.3.100 to e8:6a:64:86:3b:aa (ubuntu) via enp0s31f6
+```
+ 
+ * 上手くいっていない場合, 上記の途中でエラーが出るか, (もっとよくあるのは)ある行以降は何も出ない. そうなったら, 関連するサーバ (DHCPサーバ, tftpサーバ, NFSサーバ)を再起動する
+  * DHCPサーバ
+```
+sudo service isc-dhcp-server restart
+```
+  * tftpサーバ
+```
+sudo service tftp-hpa restart
+```
+  * NFSサーバ
+```
+sudo service nfs-kernel-server restart
+```
+ * 参考 以下でサービスが稼働しているかどうかチェックできる
+```
+service --status-all
+```
+ただし稼働していれば正しく動作しているとは限らないので, 結局上手く動かないときはrestartする(しか手立てがない)
+
+
 # outbreak コマンド: Pandemic Installer本体
  * 以降，無事クライアントが立ち上がったあとの話
  * 作業としては，端末を開き
