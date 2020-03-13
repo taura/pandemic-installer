@@ -66,7 +66,7 @@ This step should be done on your Linux, "Work PC"
 
      sudo make -f make_pandemic.mk usb
 
-  with luck, this will create /tmp/root/custom_live/edit 
+  with luck, this will create /tmp/root/custom_live/extract 
   directory that holds an entire content that will be burned
   either to DVD or USB
 
@@ -82,7 +82,7 @@ This step should be done on your Linux, "Work PC"
   file system into USB by :
 
 ```
-     sudo make -f make_pandecmi.mk burn_usb -n   # check what will happen
+     sudo make -f make_pandemic.mk burn_usb -n   # check what will happen
      sudo make -f make_pandemic.mk burn_usb      # go!
 ```
 
